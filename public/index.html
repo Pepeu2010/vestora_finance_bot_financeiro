@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0f766e">
+    <meta name="description" content="Bot Financeiro, um assistente de educacao financeira com IA.">
+    <title>Bot Financeiro</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=11">
+    <link rel="manifest" href="/manifest.json?v=11">
+    <link rel="stylesheet" href="/style.css?v=11">
+  </head>
+  <body>
+    <div class="ambient" aria-hidden="true">
+      <div class="grid-layer"></div>
+      <div class="scan-layer"></div>
+      <div class="signal signal-a"></div>
+      <div class="signal signal-b"></div>
+    </div>
+
+    <main class="app-shell">
+      <aside class="sidebar" aria-label="Painel do Bot Financeiro">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <img src="/icon.svg?v=11" alt="">
+          </div>
+          <div>
+            <h1>Bot Financeiro</h1>
+            <p>Consultor de educação financeira</p>
+          </div>
+        </div>
+
+        <section class="insight-panel" aria-label="Visao financeira">
+          <div>
+            <span>Foco atual</span>
+            <strong>Clareza financeira</strong>
+          </div>
+          <div class="meter" aria-hidden="true">
+            <span></span>
+          </div>
+        </section>
+
+        <section class="summary" aria-label="Temas principais">
+          <button type="button" data-prompt="Como monto uma reserva de emergência?">Reserva</button>
+          <button type="button" data-prompt="Qual é a diferença entre CDB, Tesouro Direto e LCI?">Renda fixa</button>
+          <button type="button" data-prompt="Como começar a investir em ações com segurança?">Ações</button>
+          <button type="button" data-prompt="O que preciso saber antes de investir em fundos imobiliários?">FIIs</button>
+          <button type="button" data-prompt="Como organizo minhas dívidas e saio do vermelho?">Dívidas</button>
+          <button type="button" data-prompt="Como criar um planejamento financeiro mensal?">Planejamento</button>
+        </section>
+
+        <section class="history-panel" aria-label="Histórico de conversas">
+          <div class="history-head">
+            <span>Conversas</span>
+            <small id="storageStatus">local</small>
+          </div>
+          <div class="conversation-list" id="conversationList"></div>
+        </section>
+
+        <button class="new-chat" id="newChatButton" type="button">
+          Nova conversa
+        </button>
+      </aside>
+
+      <section class="chat-panel" aria-label="Conversa com o Bot Financeiro">
+        <header class="chat-header">
+          <div>
+            <strong>Bot Financeiro</strong>
+            <span id="statusText">Online</span>
+          </div>
+          <div class="live-pill" aria-hidden="true">
+            <span></span>
+            IA ativa
+          </div>
+        </header>
+
+        <div class="messages" id="messages" aria-live="polite"></div>
+
+        <form class="composer" id="chatForm">
+          <textarea
+            id="messageInput"
+            name="message"
+            rows="1"
+            maxlength="1200"
+            placeholder="Pergunte sobre investimentos, dívidas, reserva ou organização financeira..."
+            autocomplete="off"
+          ></textarea>
+          <button id="sendButton" type="submit">Enviar</button>
+        </form>
+      </section>
+    </main>
+
+    <script src="/app.js?v=11"></script>
+  </body>
+</html>
