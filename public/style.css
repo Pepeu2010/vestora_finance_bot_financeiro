@@ -435,8 +435,13 @@ button {
 }
 
 .message.typing {
-  min-width: 86px;
-  padding: 16px 18px;
+  width: 82px;
+  min-width: 82px;
+  max-width: 82px;
+  min-height: 46px;
+  display: grid;
+  place-items: center;
+  padding: 0;
   animation: messageIn 220ms ease both, typingGlow 2.1s ease-in-out infinite;
 }
 
