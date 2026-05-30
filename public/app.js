@@ -460,11 +460,21 @@ chatForm.addEventListener("submit", async (event) => {
   const text = formatText(messageInput.value);
   if (!text) return;
 
+  chatForm.classList.remove("sending-burst");
+  void chatForm.offsetWidth;
+  chatForm.classList.add("sending-burst");
+
   addMessage("user", text);
   messageInput.value = "";
   resizeInput();
 
   await sendMessage(text);
+});
+
+chatForm.addEventListener("animationend", (event) => {
+  if (event.animationName === "composerBurst") {
+    chatForm.classList.remove("sending-burst");
+  }
 });
 
 messageInput.addEventListener("input", resizeInput);

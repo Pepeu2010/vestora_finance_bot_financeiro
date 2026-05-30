@@ -460,6 +460,7 @@ button {
   background: var(--user);
   color: #f8fffb;
   box-shadow: 0 14px 38px rgba(20, 184, 166, 0.18);
+  animation: userMessageSend 360ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
 .message.typing {
@@ -571,12 +572,35 @@ button {
 }
 
 .composer {
+  position: relative;
+  overflow: hidden;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 112px;
   gap: 12px;
   padding: 18px 22px 22px;
   border-top: 1px solid var(--line);
   background: rgba(5, 12, 10, 0.58);
+}
+
+.composer::after {
+  content: "";
+  position: absolute;
+  inset: auto 136px 21px auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.34);
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.2);
+}
+
+.composer.sending-burst::after {
+  animation: composerBurst 520ms ease-out;
+}
+
+.composer.sending-burst button {
+  animation: sendPulse 420ms ease-out;
 }
 
 .composer textarea {
@@ -712,6 +736,46 @@ button {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes userMessageSend {
+  from {
+    opacity: 0;
+    transform: translateY(12px) translateX(18px) scale(0.96);
+    filter: brightness(1.35);
+  }
+  65% {
+    opacity: 1;
+    transform: translateY(-2px) translateX(0) scale(1.015);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) translateX(0) scale(1);
+    filter: brightness(1);
+  }
+}
+
+@keyframes composerBurst {
+  0% {
+    opacity: 0.7;
+    transform: scale(0.2);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(28);
+  }
+}
+
+@keyframes sendPulse {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(0.94);
+  }
+  100% {
+    transform: scale(1);
   }
 }
 
