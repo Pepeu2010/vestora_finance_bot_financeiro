@@ -599,7 +599,7 @@ button {
   animation: composerBurst 520ms ease-out;
 }
 
-.composer.sending-burst button {
+.composer.sending-burst.button-submit button {
   animation: sendPulse 420ms ease-out;
 }
 

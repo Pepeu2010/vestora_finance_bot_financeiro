@@ -18,6 +18,7 @@ let currentConversationId = localStorage.getItem(CURRENT_CONVERSATION_KEY) || ""
 let messages = getCurrentMessages();
 let isSending = false;
 let cloudEnabled = false;
+let submitSource = "keyboard";
 
 function getOrCreateDeviceId() {
   const saved = localStorage.getItem(DEVICE_KEY);
@@ -460,9 +461,13 @@ chatForm.addEventListener("submit", async (event) => {
   const text = formatText(messageInput.value);
   if (!text) return;
 
-  chatForm.classList.remove("sending-burst");
+  chatForm.classList.remove("sending-burst", "button-submit");
   void chatForm.offsetWidth;
   chatForm.classList.add("sending-burst");
+  if (submitSource === "button") {
+    chatForm.classList.add("button-submit");
+  }
+  submitSource = "keyboard";
 
   addMessage("user", text);
   messageInput.value = "";
@@ -473,7 +478,7 @@ chatForm.addEventListener("submit", async (event) => {
 
 chatForm.addEventListener("animationend", (event) => {
   if (event.animationName === "composerBurst") {
-    chatForm.classList.remove("sending-burst");
+    chatForm.classList.remove("sending-burst", "button-submit");
   }
 });
 
@@ -482,8 +487,13 @@ messageInput.addEventListener("input", resizeInput);
 messageInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey) {
     event.preventDefault();
+    submitSource = "keyboard";
     chatForm.requestSubmit();
   }
+});
+
+sendButton.addEventListener("pointerdown", () => {
+  submitSource = "button";
 });
 
 newChatButton.addEventListener("click", () => {
