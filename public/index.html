@@ -6,9 +6,9 @@
     <meta name="theme-color" content="#0f766e">
     <meta name="description" content="Bot Financeiro, um assistente de educacao financeira com IA.">
     <title>Bot Financeiro</title>
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20">
-    <link rel="manifest" href="/manifest.json?v=20">
-    <link rel="stylesheet" href="/style.css?v=20">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=21">
+    <link rel="manifest" href="/manifest.json?v=21">
+    <link rel="stylesheet" href="/style.css?v=21">
   </head>
   <body>
     <div class="ambient" aria-hidden="true">
@@ -22,7 +22,7 @@
       <aside class="sidebar" aria-label="Painel do Bot Financeiro">
         <div class="brand">
           <div class="brand-mark" aria-hidden="true">
-            <img src="/icon.svg?v=20" alt="">
+            <img src="/icon.svg?v=21" alt="">
           </div>
           <div>
             <h1>Bot Financeiro</h1>
@@ -52,7 +52,10 @@
         <section class="history-panel" aria-label="Histórico de conversas">
           <div class="history-head">
             <span>Conversas</span>
-            <small id="storageStatus">local</small>
+            <div class="history-actions">
+              <button id="syncButton" type="button">Sincronizar</button>
+              <small id="storageStatus">local</small>
+            </div>
           </div>
           <div class="conversation-list" id="conversationList"></div>
         </section>
@@ -90,6 +93,6 @@
       </section>
     </main>
 
-    <script src="/app.js?v=20"></script>
+    <script src="/app.js?v=21"></script>
   </body>
 </html>

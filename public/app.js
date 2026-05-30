@@ -7,6 +7,7 @@ const newChatButton = document.querySelector("#newChatButton");
 const promptButtons = document.querySelectorAll("[data-prompt]");
 const conversationListEl = document.querySelector("#conversationList");
 const storageStatusEl = document.querySelector("#storageStatus");
+const syncButton = document.querySelector("#syncButton");
 
 const DEVICE_KEY = "bot-financeiro-device-id";
 const CONVERSATIONS_KEY = "bot-financeiro-conversations";
@@ -27,6 +28,18 @@ function getOrCreateDeviceId() {
   const id = crypto.randomUUID();
   localStorage.setItem(DEVICE_KEY, id);
   return id;
+}
+
+function setDeviceId(nextDeviceId) {
+  const clean = String(nextDeviceId || "").trim();
+
+  if (!/^[a-zA-Z0-9_-]{12,120}$/.test(clean)) {
+    return false;
+  }
+
+  deviceId = clean;
+  localStorage.setItem(DEVICE_KEY, deviceId);
+  return true;
 }
 
 function loadLocalConversations() {
@@ -361,6 +374,29 @@ async function loadCloudConversations() {
   }
 }
 
+async function syncDeviceHistory() {
+  const typed = window.prompt(
+    "Para usar o mesmo histórico em outro navegador, copie este código e cole no outro navegador. Para entrar em outro histórico, cole o código aqui:",
+    deviceId
+  );
+
+  if (typed === null) return;
+
+  if (!setDeviceId(typed)) {
+    window.alert("Código inválido. Use apenas letras, números, _ ou -, com pelo menos 12 caracteres.");
+    return;
+  }
+
+  currentConversationId = "";
+  messages = [];
+  conversations = [];
+  localStorage.removeItem(CURRENT_CONVERSATION_KEY);
+  saveLocalConversations();
+  renderConversationList();
+  renderMessages();
+  await loadCloudConversations();
+}
+
 async function loadCloudMessages(conversationId) {
   if (!cloudEnabled) return null;
 
@@ -546,6 +582,8 @@ promptButtons.forEach((button) => {
     messageInput.focus();
   });
 });
+
+syncButton.addEventListener("click", syncDeviceHistory);
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
