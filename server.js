@@ -43,9 +43,10 @@ app.use(
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 220,
+  limit: 1000,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.path === "/api/health",
   message: {
     error: "Muitas requisições em pouco tempo. Aguarde um pouco e tente novamente."
   }

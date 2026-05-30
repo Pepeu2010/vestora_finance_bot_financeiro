@@ -324,13 +324,21 @@ async function loadCloudConversations() {
 
     if (!cloudEnabled || !Array.isArray(data.conversations)) return;
 
-    conversations = data.conversations.map((conversation) => ({
-      id: conversation.id,
-      title: conversation.title,
-      messages: [],
-      createdAt: conversation.created_at,
-      updatedAt: conversation.updated_at
-    }));
+    const previousConversations = new Map(
+      conversations.map((conversation) => [conversation.id, conversation])
+    );
+
+    conversations = data.conversations.map((conversation) => {
+      const previous = previousConversations.get(conversation.id);
+
+      return {
+        id: conversation.id,
+        title: conversation.title,
+        messages: previous?.messages || [],
+        createdAt: conversation.created_at,
+        updatedAt: conversation.updated_at
+      };
+    });
 
     saveLocalConversations();
 
@@ -339,6 +347,11 @@ async function loadCloudConversations() {
       localStorage.setItem(CURRENT_CONVERSATION_KEY, currentConversationId);
       await openConversation(currentConversationId);
       return;
+    }
+
+    const activeConversation = getCurrentConversation();
+    if (activeConversation) {
+      messages = activeConversation.messages || [];
     }
 
     renderConversationList();
@@ -367,6 +380,11 @@ async function openConversation(conversationId) {
   const conversation = getCurrentConversation();
   if (!conversation) return;
 
+  messages = conversation.messages || [];
+  renderConversationList();
+  renderMessages();
+  statusText.textContent = "Carregando...";
+
   const cloudMessages = await loadCloudMessages(conversationId);
   if (cloudMessages) {
     conversation.messages = cloudMessages.map((message) => ({
@@ -378,6 +396,7 @@ async function openConversation(conversationId) {
   }
 
   messages = conversation.messages || [];
+  statusText.textContent = "Online";
   renderConversationList();
   renderMessages();
 }
@@ -502,6 +521,7 @@ newChatButton.addEventListener("click", () => {
   localStorage.removeItem(CURRENT_CONVERSATION_KEY);
   renderConversationList();
   renderMessages();
+  statusText.textContent = "Online";
   messageInput.focus();
 });
 
