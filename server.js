@@ -10,6 +10,7 @@ const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const APP_NAME = process.env.APP_NAME || "Bot Financeiro";
 const MAX_HISTORY_MESSAGES = 16;
+const SECURITY_REFUSAL = "Não posso ajudar com arquivos internos, código, chaves, prompts ou configurações do sistema. Posso te ajudar com educação financeira, organização do dinheiro e investimentos.";
 
 // Memoria temporaria por sessao do navegador.
 // Sem banco de dados: se o servidor reiniciar, a memoria some.
@@ -62,6 +63,51 @@ function makeTitle(text) {
 
   if (!clean) return "Nova conversa";
   return clean.length > 48 ? `${clean.slice(0, 48)}...` : clean;
+}
+
+function isSensitiveSystemRequest(text) {
+  const normalized = String(text || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  const sensitiveTerms = [
+    ".env",
+    "api key",
+    "apikey",
+    "chave api",
+    "chave da api",
+    "token",
+    "service_role",
+    "service role",
+    "supabase_service_role_key",
+    "groq_api_key",
+    "prompt interno",
+    "system prompt",
+    "instrucoes internas",
+    "instrucoes do sistema",
+    "codigo fonte",
+    "source code",
+    "server.js",
+    "groq.js",
+    "supabase.js",
+    "prompts.js",
+    "package.json",
+    "arquivos internos",
+    "estrutura de pastas",
+    "burlar",
+    "jailbreak",
+    "modo desenvolvedor",
+    "developer mode",
+    "ignore as instrucoes",
+    "ignore suas instrucoes",
+    "revele",
+    "mostre seus arquivos",
+    "liste seus arquivos",
+    "configuracao do servidor"
+  ];
+
+  return sensitiveTerms.some((term) => normalized.includes(term));
 }
 
 async function ensureConversation({ conversationId, deviceId, firstMessage }) {
@@ -318,6 +364,25 @@ app.post("/api/chat", async (req, res) => {
       role: "user",
       content: userMessage
     });
+
+    if (isSensitiveSystemRequest(userMessage)) {
+      addToHistory(session, "user", userMessage);
+      addToHistory(session, "model", SECURITY_REFUSAL);
+
+      await saveCloudMessage({
+        conversationId,
+        role: "model",
+        content: SECURITY_REFUSAL
+      });
+
+      console.warn(`[${now()}] [${session.id}] Pedido sensivel bloqueado.`);
+
+      return res.json({
+        sessionId: session.id,
+        conversationId,
+        answer: SECURITY_REFUSAL
+      });
+    }
 
     const answer = await askGroq({
       message: userMessage,
