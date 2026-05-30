@@ -305,12 +305,49 @@ button {
 }
 
 .conversation-delete {
+  position: relative;
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   border-radius: 999px;
   color: #ffd0d8;
+  opacity: 0;
+  transform: scale(0.92);
+  transition: opacity 160ms ease, transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.conversation-item:hover .conversation-delete,
+.conversation-open.active + .conversation-delete,
+.conversation-delete:focus-visible {
+  opacity: 0.62;
+  transform: scale(1);
+}
+
+.conversation-delete:hover {
+  opacity: 1;
+  border-color: rgba(251, 113, 133, 0.6);
+  background: rgba(251, 113, 133, 0.13);
+}
+
+.conversation-delete span,
+.conversation-delete span::before {
+  position: absolute;
+  width: 13px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  content: "";
+}
+
+.conversation-delete span {
+  transform: rotate(45deg);
+}
+
+.conversation-delete span::before {
+  transform: rotate(90deg);
+  left: 0;
+  top: 0;
 }
 
 .conversation-empty {

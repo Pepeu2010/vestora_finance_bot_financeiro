@@ -293,7 +293,8 @@ function renderConversationList() {
     deleteButton.type = "button";
     deleteButton.dataset.id = conversation.id;
     deleteButton.title = "Apagar conversa";
-    deleteButton.textContent = "x";
+    deleteButton.setAttribute("aria-label", "Apagar conversa");
+    deleteButton.innerHTML = "<span></span>";
 
     item.append(openButton, deleteButton);
     conversationListEl.appendChild(item);
