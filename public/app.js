@@ -260,7 +260,7 @@ function renderMessages() {
 function addWelcomeMessage() {
   const bubble = document.createElement("article");
   bubble.className = "message bot";
-  bubble.innerHTML = renderMarkdown("Olá. Sou o Bot Financeiro. Posso te ajudar a organizar dinheiro, montar reserva, entender renda fixa, ações, FIIs e planejar seus próximos passos. Qual decisão financeira você quer clarear hoje?");
+  bubble.innerHTML = renderMarkdown("Olá. Sou o Bot Financeiro. Posso te ajudar a organizar dinheiro, montar reserva, entender investimentos, FIIs, financiamento, imóveis e planejamento. Qual decisão financeira você quer clarear hoje?");
   messagesEl.appendChild(bubble);
 }
 
