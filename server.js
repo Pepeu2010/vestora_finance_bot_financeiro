@@ -3,7 +3,7 @@ require("dotenv").config();
 const crypto = require("crypto");
 const express = require("express");
 const path = require("path");
-const { askGemini } = require("./gemini");
+const { askGroq } = require("./groq");
 const { supabase, isSupabaseConfigured } = require("./supabase");
 
 const app = express();
@@ -309,7 +309,7 @@ app.post("/api/chat", async (req, res) => {
       deviceId
     });
 
-    const historyForGemini = isSupabaseConfigured
+    const historyForGroq = isSupabaseConfigured
       ? cloudHistory.slice(-MAX_HISTORY_MESSAGES)
       : session.history.slice(-MAX_HISTORY_MESSAGES);
 
@@ -319,9 +319,9 @@ app.post("/api/chat", async (req, res) => {
       content: userMessage
     });
 
-    const answer = await askGemini({
+    const answer = await askGroq({
       message: userMessage,
-      history: historyForGemini
+      history: historyForGroq
     });
 
     addToHistory(session, "user", userMessage);

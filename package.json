@@ -1,7 +1,7 @@
 {
   "name": "bot-financeiro",
   "version": "1.0.0",
-  "description": "Chatbot web/PWA de educacao financeira com Node.js e Google Gemini.",
+  "description": "Chatbot web/PWA de educacao financeira com Node.js e Groq.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -10,14 +10,13 @@
   "keywords": [
     "chatbot",
     "financeiro",
-    "gemini",
+    "groq",
     "pwa",
     "nodejs"
   ],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.106.2",
     "dotenv": "^16.4.7",
     "express": "^4.21.2"

@@ -1,6 +1,6 @@
 # Bot Financeiro
 
-Chatbot web/PWA de educacao financeira com Node.js, Gemini e historico de conversas.
+Chatbot web/PWA de educacao financeira com Node.js, Groq e historico de conversas.
 
 ## Rodar localmente
 
@@ -15,12 +15,13 @@ Acesse:
 http://localhost:3005
 ```
 
-## Configurar Gemini
+## Configurar Groq
 
 No arquivo `.env`, preencha:
 
 ```env
-GEMINI_API_KEY=sua_chave_gemini
+GROQ_API_KEY=sua_chave_groq
+GROQ_MODEL=llama-3.3-70b-versatile
 ```
 
 ## Historico com Supabase
