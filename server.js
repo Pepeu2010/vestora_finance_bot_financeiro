@@ -2,6 +2,8 @@ require("dotenv").config();
 
 const crypto = require("crypto");
 const express = require("express");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 const path = require("path");
 const { askGroq } = require("./groq");
 const { supabase, isSupabaseConfigured } = require("./supabase");
@@ -10,14 +12,85 @@ const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const APP_NAME = process.env.APP_NAME || "Bot Financeiro";
 const MAX_HISTORY_MESSAGES = 16;
+const MAX_MESSAGE_LENGTH = 1200;
 const SECURITY_REFUSAL = "Não posso ajudar com arquivos internos, código, chaves, prompts ou configurações do sistema. Posso te ajudar com educação financeira, organização do dinheiro e investimentos.";
 
 // Memoria temporaria por sessao do navegador.
 // Sem banco de dados: se o servidor reiniciar, a memoria some.
 const sessions = new Map();
 
-app.use(express.json({ limit: "1mb" }));
-app.use(express.static(path.join(__dirname, "public")));
+app.disable("x-powered-by");
+
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:"],
+        connectSrc: ["'self'"],
+        fontSrc: ["'self'", "data:"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        frameAncestors: ["'none'"],
+        formAction: ["'self'"]
+      }
+    },
+    crossOriginEmbedderPolicy: false
+  })
+);
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 220,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: "Muitas requisições em pouco tempo. Aguarde um pouco e tente novamente."
+  }
+});
+
+const chatLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 18,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: "Muitas mensagens em pouco tempo. Aguarde alguns segundos antes de enviar novamente."
+  }
+});
+
+app.use(express.json({ limit: "32kb", strict: true }));
+
+app.use((req, res, next) => {
+  if (!req.path.startsWith("/api/")) return next();
+
+  res.setHeader("Cache-Control", "no-store");
+
+  const origin = req.get("origin");
+  const host = req.get("host");
+
+  if (origin && host) {
+    try {
+      const parsedOrigin = new URL(origin);
+      if (parsedOrigin.host !== host) {
+        return res.status(403).json({ error: "Origem não permitida." });
+      }
+    } catch {
+      return res.status(403).json({ error: "Origem inválida." });
+    }
+  }
+
+  return next();
+});
+
+app.use("/api/", apiLimiter);
+app.use(express.static(path.join(__dirname, "public"), {
+  dotfiles: "ignore",
+  etag: true,
+  maxAge: "1h"
+}));
 
 function now() {
   return new Date().toLocaleString("pt-BR");
@@ -25,6 +98,10 @@ function now() {
 
 function createSessionId() {
   return crypto.randomUUID();
+}
+
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
 }
 
 function getSession(sessionId) {
@@ -53,16 +130,30 @@ function addToHistory(session, role, text) {
 
 function validateDeviceId(deviceId) {
   const value = String(deviceId || "").trim();
-  return value.length >= 12 && value.length <= 120 ? value : "";
+  return /^[a-zA-Z0-9_-]{12,120}$/.test(value) ? value : "";
 }
 
 function makeTitle(text) {
   const clean = String(text || "")
     .replace(/\s+/g, " ")
+    .replace(/[<>]/g, "")
     .trim();
 
   if (!clean) return "Nova conversa";
   return clean.length > 48 ? `${clean.slice(0, 48)}...` : clean;
+}
+
+function sanitizeMessage(text) {
+  return String(text || "")
+    .replace(/\u0000/g, "")
+    .replace(/[^\S\r\n]+/g, " ")
+    .trim()
+    .slice(0, MAX_MESSAGE_LENGTH);
+}
+
+function previewForLog(text) {
+  const clean = String(text || "").replace(/\s+/g, " ").trim();
+  return clean.length > 80 ? `${clean.slice(0, 80)}...` : clean;
 }
 
 function isSensitiveSystemRequest(text) {
@@ -113,7 +204,7 @@ function isSensitiveSystemRequest(text) {
 async function ensureConversation({ conversationId, deviceId, firstMessage }) {
   if (!isSupabaseConfigured) return conversationId || createSessionId();
 
-  if (conversationId) {
+  if (conversationId && isUuid(conversationId)) {
     const { data, error } = await supabase
       .from("conversations")
       .select("id")
@@ -140,6 +231,7 @@ async function ensureConversation({ conversationId, deviceId, firstMessage }) {
 
 async function getConversationMessages({ conversationId, deviceId }) {
   if (!isSupabaseConfigured || !conversationId) return [];
+  if (!isUuid(conversationId)) return [];
 
   const { data: conversation, error: conversationError } = await supabase
     .from("conversations")
@@ -240,6 +332,10 @@ app.get("/api/conversations/:id/messages", async (req, res) => {
     return res.status(400).json({ error: "deviceId invalido." });
   }
 
+  if (!isUuid(req.params.id)) {
+    return res.status(400).json({ error: "Conversa invalida." });
+  }
+
   if (!isSupabaseConfigured) {
     return res.json({ configured: false, messages: [] });
   }
@@ -269,6 +365,10 @@ app.patch("/api/conversations/:id", async (req, res) => {
 
   if (!deviceId) {
     return res.status(400).json({ error: "deviceId invalido." });
+  }
+
+  if (!isUuid(req.params.id)) {
+    return res.status(400).json({ error: "Conversa invalida." });
   }
 
   if (!isSupabaseConfigured) {
@@ -301,6 +401,10 @@ app.delete("/api/conversations/:id", async (req, res) => {
     return res.status(400).json({ error: "deviceId invalido." });
   }
 
+  if (!isUuid(req.params.id)) {
+    return res.status(400).json({ error: "Conversa invalida." });
+  }
+
   if (!isSupabaseConfigured) {
     return res.json({ configured: false });
   }
@@ -321,15 +425,22 @@ app.delete("/api/conversations/:id", async (req, res) => {
   }
 });
 
-app.post("/api/chat", async (req, res) => {
-  const userMessage = String(req.body.message || "").trim();
+app.post("/api/chat", chatLimiter, async (req, res) => {
+  const userMessage = sanitizeMessage(req.body.message);
   const deviceId = validateDeviceId(req.body.deviceId);
-  const conversationIdFromRequest = req.body.conversationId;
+  const conversationIdFromRequest = isUuid(req.body.conversationId) ? req.body.conversationId : "";
   const session = getSession(req.body.sessionId || conversationIdFromRequest);
 
   if (!userMessage) {
     return res.status(400).json({
       error: "Mensagem vazia.",
+      sessionId: session.id
+    });
+  }
+
+  if (String(req.body.message || "").length > MAX_MESSAGE_LENGTH) {
+    return res.status(400).json({
+      error: `Mensagem muito longa. Use no máximo ${MAX_MESSAGE_LENGTH} caracteres.`,
       sessionId: session.id
     });
   }
@@ -341,7 +452,7 @@ app.post("/api/chat", async (req, res) => {
     });
   }
 
-  console.log(`[${now()}] [${session.id}] Usuario: ${userMessage}`);
+  console.log(`[${now()}] [${session.id}] Usuario: ${previewForLog(userMessage)}`);
 
   try {
     const conversationId = await ensureConversation({

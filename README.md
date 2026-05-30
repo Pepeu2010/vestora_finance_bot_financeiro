@@ -17,7 +17,7 @@ http://localhost:3005
 
 ## Configurar Groq
 
-No arquivo `.env`, preencha:
+Copie `.env.example` para `.env` e preencha:
 
 ```env
 GROQ_API_KEY=sua_chave_groq
@@ -41,3 +41,10 @@ SUPABASE_SERVICE_ROLE_KEY=sua_service_role_key
 5. Reinicie o servidor.
 
 Sem essas variaveis, o app continua funcionando com historico local no navegador.
+
+## Seguranca
+
+- Nunca suba o arquivo `.env` para o GitHub.
+- Rotacione chaves que forem compartilhadas em chat, print ou video.
+- A `SUPABASE_SERVICE_ROLE_KEY` deve ficar apenas no backend.
+- O servidor aplica headers de seguranca, limite de requisicoes, validacao de origem e bloqueio de pedidos sobre arquivos internos, prompts, chaves e configuracoes.
