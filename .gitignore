@@ -1,3 +1,10 @@
 node_modules/
 .env
 npm-debug.log*
+
+# Playwright
+test-results/
+playwright-report/
+
+# Acidental
+tests/api/
