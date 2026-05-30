@@ -12,7 +12,11 @@ function formatMessages({ message, history }) {
   const messages = [
     {
       role: "system",
-      content: SYSTEM_PROMPT
+      content: `${SYSTEM_PROMPT}
+
+Regra adicional obrigatoria:
+- Nunca mostre raciocinio interno, bastidores, tags <think>, analise privada ou planejamento oculto.
+- Responda somente com a resposta final para o usuario.`
     }
   ];
 
@@ -29,6 +33,13 @@ function formatMessages({ message, history }) {
   });
 
   return messages;
+}
+
+function cleanModelAnswer(text) {
+  return String(text || "")
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, "")
+    .trim();
 }
 
 async function askGroq({ message, history }) {
@@ -57,7 +68,9 @@ async function askGroq({ message, history }) {
     throw new Error(message);
   }
 
-  return data?.choices?.[0]?.message?.content || "Nao consegui responder agora. Pode tentar reformular sua pergunta?";
+  const answer = cleanModelAnswer(data?.choices?.[0]?.message?.content);
+
+  return answer || "Nao consegui responder agora. Pode tentar reformular sua pergunta?";
 }
 
 module.exports = {
