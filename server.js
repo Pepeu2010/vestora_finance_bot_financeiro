@@ -346,6 +346,8 @@ function tryQuickCalculator(text, session, officialFacts) {
   const normalized = normalizeText(text);
   const values = parseMoneyValues(text);
   const profile = session.profile || {};
+  const officialFactItems = Array.isArray(officialFacts?.facts) ? officialFacts.facts : [];
+  const macroFacts = officialFactItems.find((fact) => fact.topic === "Indicadores economicos 2026");
 
   if (
     normalized.includes("minha casa minha vida") ||
@@ -357,6 +359,25 @@ function tryQuickCalculator(text, session, officialFacts) {
       : "Nao consegui confirmar online agora, entao use isto como referencia e valide na CAIXA/Ministerio das Cidades.";
 
     return `${checked}\n\nSobre o **Minha Casa, Minha Vida**, familias em area urbana podem entrar no programa com renda bruta familiar mensal de ate **R$ 13.000**.\n\nFaixas urbanas atuais: **Faixa 1 ate R$ 3.200**, **Faixa 2 de R$ 3.200,01 a R$ 5.000**, **Faixa 3 de R$ 5.000,01 a R$ 9.600** e **Faixa 4 ate R$ 13.000**. Para a Faixa 4, o MCMV Classe Media tem regras especificas, como imovel de ate R$ 600 mil.\n\nProximo passo: confirme sua renda familiar bruta, cidade, valor do imovel e entrada disponivel. Antes de fechar contrato, valide no simulador da CAIXA ou em uma agencia, porque taxas, subsidio e aprovacao dependem do perfil e da data.`;
+  }
+
+  if (macroFacts?.facts && (normalized.includes("selic") || normalized.includes("ipca") || normalized.includes("cdi"))) {
+    const lines = ["Conferi os dados do Banco Central antes de responder:"];
+
+    if (normalized.includes("selic") && macroFacts.facts.selicMeta) {
+      lines.push(`- **Selic meta:** ${macroFacts.facts.selicMeta.value} (referencia ${macroFacts.facts.selicMeta.date}).`);
+    }
+
+    if ((normalized.includes("ipca") || normalized.includes("inflacao")) && macroFacts.facts.ipca) {
+      lines.push(`- **IPCA:** ultimo mes ${macroFacts.facts.ipca.latestMonthly} (${macroFacts.facts.ipca.latestMonth}); acumulado aproximado em 12 meses ${macroFacts.facts.ipca.accumulated12mApprox}.`);
+    }
+
+    if (normalized.includes("cdi") && macroFacts.facts.cdi) {
+      lines.push(`- **CDI:** ultimo dado diario ${macroFacts.facts.cdi.latestDaily} (${macroFacts.facts.cdi.latestDate}); anualizado aproximado ${macroFacts.facts.cdi.annualizedApprox}.`);
+    }
+
+    lines.push("Esses indicadores mudam. Para aplicar dinheiro hoje, confirme a taxa no banco/corretora e veja liquidez, IR, IOF e risco.");
+    return lines.join("\n");
   }
 
   if (normalized.includes("reserva") && (values[0] || profile.gastos)) {

@@ -207,6 +207,22 @@ test.describe("API - Respostas controladas", () => {
     expect(body.answer).toContain("Faixa 4");
     expect(body.answer).not.toContain("R$ 12.000");
   });
+
+  test("Selic usa dado atual do Banco Central", async ({ request }) => {
+    await registerTestUser(request);
+
+    const response = await request.post("/api/chat", {
+      data: { message: "Qual a Selic atual?" }
+    });
+
+    if (response.status() === 429) return;
+    expect(response.ok()).toBeTruthy();
+
+    const body = await response.json();
+    expect(body.answer).toContain("Banco Central");
+    expect(body.answer).toContain("Selic meta");
+    expect(body.answer).not.toContain("não sei");
+  });
 });
 
 test.describe("API - Headers", () => {

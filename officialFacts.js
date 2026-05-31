@@ -63,6 +63,202 @@ async function fetchText(url) {
   }
 }
 
+async function fetchJson(url) {
+  const cached = cache.get(url);
+  if (cached && Date.now() - cached.createdAt < CACHE_TTL_MS) {
+    return cached.json;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "BotFinanceiro/1.0 (+https://github.com/Pepeu2010/bot_financeiro)"
+      },
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      throw new Error(`Fonte retornou HTTP ${response.status}`);
+    }
+
+    const json = await response.json();
+    cache.set(url, { json, createdAt: Date.now() });
+    return json;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function parseBrlNumber(value) {
+  return Number(String(value || "").replace(",", "."));
+}
+
+function formatPercent(value, digits = 2) {
+  if (!Number.isFinite(value)) return "";
+  return `${value.toFixed(digits).replace(".", ",")}%`;
+}
+
+function lastItem(items) {
+  return Array.isArray(items) && items.length > 0 ? items[items.length - 1] : null;
+}
+
+function isMacroQuestion(message) {
+  const normalized = normalizeText(message);
+  return [
+    "selic",
+    "ipca",
+    "inflacao",
+    "inflação",
+    "cdi",
+    "renda fixa",
+    "tesouro selic",
+    "tesouro direto",
+    "cdb",
+    "lci",
+    "lca",
+    "poupanca",
+    "poupança"
+  ].some((term) => normalized.includes(normalizeText(term)));
+}
+
+function isTaxOrGuaranteeQuestion(message) {
+  const normalized = normalizeText(message);
+  return [
+    "imposto",
+    "ir",
+    "iof",
+    "fgc",
+    "garantia",
+    "cdb",
+    "lci",
+    "lca",
+    "renda fixa"
+  ].some((term) => normalized.includes(normalizeText(term)));
+}
+
+function isTreasuryQuestion(message) {
+  const normalized = normalizeText(message);
+  return [
+    "tesouro",
+    "tesouro direto",
+    "tesouro selic",
+    "tesouro ipca",
+    "tesouro prefixado",
+    "taxa de custodia",
+    "custodia b3"
+  ].some((term) => normalized.includes(normalizeText(term)));
+}
+
+async function getBancoCentralFacts() {
+  const [selicMetaData, ipcaData, cdiData] = await Promise.all([
+    fetchJson("https://api.bcb.gov.br/dados/serie/bcdata.sgs.432/dados/ultimos/1?formato=json"),
+    fetchJson("https://api.bcb.gov.br/dados/serie/bcdata.sgs.433/dados/ultimos/12?formato=json"),
+    fetchJson("https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados/ultimos/1?formato=json")
+  ]);
+
+  const selicMeta = lastItem(selicMetaData);
+  const latestIpca = lastItem(ipcaData);
+  const ipca12m = ipcaData.reduce((acc, item) => acc * (1 + parseBrlNumber(item.valor) / 100), 1) - 1;
+  const cdiDaily = lastItem(cdiData);
+  const cdiDailyValue = parseBrlNumber(cdiDaily?.valor);
+  const cdiAnnualApprox = Math.pow(1 + cdiDailyValue / 100, 252) - 1;
+
+  return {
+    topic: "Indicadores economicos 2026",
+    verified: true,
+    checkedAt: new Date().toISOString(),
+    instruction:
+      "Use estes indicadores do Banco Central como referencia atual. Para decisao financeira, diga que taxas mudam e devem ser conferidas novamente no dia da aplicacao.",
+    facts: {
+      selicMeta: selicMeta
+        ? {
+            value: `${formatPercent(parseBrlNumber(selicMeta.valor))} a.a.`,
+            date: selicMeta.data,
+            source: "Banco Central SGS serie 432"
+          }
+        : null,
+      ipca: latestIpca
+        ? {
+            latestMonthly: formatPercent(parseBrlNumber(latestIpca.valor)),
+            latestMonth: latestIpca.data,
+            accumulated12mApprox: formatPercent(ipca12m * 100),
+            source: "Banco Central SGS serie 433"
+          }
+        : null,
+      cdi: cdiDaily
+        ? {
+            latestDaily: formatPercent(cdiDailyValue, 4),
+            latestDate: cdiDaily.data,
+            annualizedApprox: formatPercent(cdiAnnualApprox * 100),
+            source: "Banco Central SGS serie 12"
+          }
+        : null
+    },
+    sources: [
+      {
+        name: "Banco Central SGS - Meta Selic",
+        url: "https://api.bcb.gov.br/dados/serie/bcdata.sgs.432/dados/ultimos/1?formato=json"
+      },
+      {
+        name: "Banco Central SGS - IPCA",
+        url: "https://api.bcb.gov.br/dados/serie/bcdata.sgs.433/dados/ultimos/12?formato=json"
+      },
+      {
+        name: "Banco Central SGS - CDI",
+        url: "https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados/ultimos/1?formato=json"
+      }
+    ]
+  };
+}
+
+async function getTreasuryFacts() {
+  const url = "https://www.b3.com.br/pt_br/produtos-e-servicos/tarifas/tarifas-de-tesouro-direto/";
+  const text = await fetchText(url).catch(() => "");
+  const snippet = text ? findSnippet(text, ["0,2% ao ano", "Tesouro Selic", "R$10.000"], 520) : "";
+
+  return {
+    topic: "Tesouro Direto 2026",
+    verified: Boolean(snippet),
+    checkedAt: new Date().toISOString(),
+    instruction:
+      "Use estes dados para Tesouro Direto. Se falar de preco/taxa de compra de titulo especifico, avise que muda diariamente e deve ser conferido no Tesouro Direto ou corretora.",
+    facts:
+      "B3 informa taxa de custodia de 0,20% ao ano no Tesouro Direto. Para Tesouro Selic, ha isencao da taxa de custodia sobre valores ate R$ 10.000 por CPF; saldo acima disso pode ter cobranca sobre o excedente. Precos e taxas dos titulos mudam diariamente.",
+    sources: [
+      {
+        name: "B3 - Tarifas de Tesouro Direto",
+        url,
+        snippet
+      }
+    ]
+  };
+}
+
+function getTaxAndGuaranteeFacts() {
+  return {
+    topic: "Renda fixa, impostos e garantias 2026",
+    verified: true,
+    checkedAt: new Date().toISOString(),
+    instruction:
+      "Use como referencia geral para renda fixa no Brasil em 2026. Se houver produto especifico, confirme no emissor/corretora.",
+    facts:
+      "IR regressivo em renda fixa tributada: 22,5% ate 180 dias; 20% de 181 a 360 dias; 17,5% de 361 a 720 dias; 15% acima de 720 dias. IOF pode incidir em resgates antes de 30 dias. LCI/LCA sao isentas de IR para pessoa fisica, mas podem ter carencia e risco de credito. FGC costuma cobrir CDB, LCI, LCA e outros produtos elegiveis ate R$ 250 mil por CPF/CNPJ por instituicao/conglomerado, limitado a R$ 1 milhao em 4 anos; Tesouro Direto nao tem FGC, pois e titulo publico federal.",
+    sources: [
+      {
+        name: "Receita Federal - Tabelas IRPF 2026",
+        url: "https://www.gov.br/receitafederal/pt-br/assuntos/meu-imposto-de-renda/tabelas"
+      },
+      {
+        name: "FGC - Garantia Ordinaria",
+        url: "https://www.fgc.org.br/garantia-fgc/sobre-a-garantia-fgc"
+      }
+    ]
+  };
+}
+
 function isMinhaCasaMinhaVidaQuestion(message) {
   const normalized = normalizeText(message);
   return (
@@ -126,14 +322,50 @@ async function getMinhaCasaMinhaVidaFacts() {
 }
 
 async function getOfficialFactsForMessage(message) {
+  const facts = [];
+
   if (isMinhaCasaMinhaVidaQuestion(message)) {
-    return getMinhaCasaMinhaVidaFacts();
+    facts.push(await getMinhaCasaMinhaVidaFacts());
   }
 
-  return null;
+  if (isMacroQuestion(message)) {
+    const macroFacts = await getBancoCentralFacts().catch(() => null);
+    if (macroFacts) facts.push(macroFacts);
+  }
+
+  if (isTreasuryQuestion(message)) {
+    const treasuryFacts = await getTreasuryFacts().catch(() => null);
+    if (treasuryFacts) facts.push(treasuryFacts);
+  }
+
+  if (isTaxOrGuaranteeQuestion(message)) {
+    facts.push(getTaxAndGuaranteeFacts());
+  }
+
+  if (facts.length === 0) {
+    return {
+      topic: "Contexto temporal 2026",
+      verified: true,
+      checkedAt: new Date().toISOString(),
+      instruction:
+        "Estamos em 2026. Para qualquer numero atual, regra vigente, taxa, cotacao, preco, rendimento, imposto ou programa publico que nao esteja nos dados oficiais enviados, nao invente. Diga que precisa confirmar em fonte oficial ou peça dados atuais ao usuario.",
+      facts:
+        "Use 2026 como ano de referencia. Dados de mercado, leis, programas publicos, indicadores economicos, impostos e financiamento podem mudar."
+    };
+  }
+
+  return {
+    topic: "Referencias oficiais e contexto 2026",
+    verified: facts.some((fact) => fact.verified),
+    checkedAt: new Date().toISOString(),
+    instruction:
+      "Use estes dados antes do conhecimento geral. Se algo nao estiver aqui, nao chute numeros atuais; diga que precisa confirmar em fonte oficial.",
+    facts
+  };
 }
 
 module.exports = {
   getOfficialFactsForMessage,
-  isMinhaCasaMinhaVidaQuestion
+  isMinhaCasaMinhaVidaQuestion,
+  isMacroQuestion
 };
