@@ -14,6 +14,7 @@ module.exports = defineConfig({
     screenshot: "only-on-failure",
     trace: "off",
     actionTimeout: 10000,
+    serviceWorkers: "block",
   },
   projects: [
     {

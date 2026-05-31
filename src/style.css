@@ -1073,6 +1073,11 @@ button {
   fill: none;
 }
 
+.composer button .stop-icon {
+  fill: currentColor;
+  stroke: none;
+}
+
 .composer button::before {
   content: "";
   position: absolute;
@@ -1116,8 +1121,9 @@ button {
 
 .composer button:disabled {
   cursor: not-allowed;
-  opacity: 0.58;
+  opacity: 0.72;
   transform: none;
+  filter: saturate(0.82);
 }
 
 @keyframes ambientBreath {

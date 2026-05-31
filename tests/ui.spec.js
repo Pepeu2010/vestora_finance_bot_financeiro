@@ -103,6 +103,50 @@ test.describe("UI - App React", () => {
     expect(textareaBox.x + textareaBox.width).toBeLessThanOrEqual(buttonBox.x - 4);
   });
 
+  test("bloqueia envios duplicados enquanto a IA responde", async ({ page }) => {
+    let chatRequests = 0;
+
+    await page.route("**/api/auth/me", (route) =>
+      route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          authenticated: true,
+          user: { id: "teste", name: "Teste", email: "teste@app.local" }
+        })
+      })
+    );
+    await page.route("**/api/conversations", (route) =>
+      route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ configured: false, conversations: [] })
+      })
+    );
+    await page.route("**/api/chat", async (route) => {
+      chatRequests += 1;
+      await page.waitForTimeout(250);
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ answer: "Resposta de teste." })
+      });
+    });
+
+    await page.goto("/");
+
+    const textarea = page.locator("#messageInput");
+    const sendButton = page.locator("#sendButton");
+
+    await textarea.fill("Quero simular um financiamento");
+    await sendButton.click();
+    await page.keyboard.press("Enter");
+    await sendButton.click({ force: true });
+
+    await expect(sendButton).toBeDisabled();
+    await expect(sendButton).toHaveAttribute("aria-label", "Aguardando resposta");
+    await expect(page.locator(".message.bot").filter({ hasText: "Resposta de teste." })).toBeVisible();
+
+    expect(chatRequests).toBe(1);
+  });
+
   test("mantem camadas visuais futuristas", async ({ page }) => {
     await page.goto("/");
 

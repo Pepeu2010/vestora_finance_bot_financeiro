@@ -286,6 +286,7 @@ export default function App() {
   const messagesRef = useRef(null);
   const inputRef = useRef(null);
   const authHideTimer = useRef(null);
+  const sendingLockRef = useRef(false);
 
   const currentConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === currentConversationId) || null,
@@ -526,6 +527,10 @@ export default function App() {
   }
 
   async function sendMessage(text) {
+    if (sendingLockRef.current) return;
+    sendingLockRef.current = true;
+    setIsSending(true);
+
     const { conversation } = ensureLocalConversation(text);
     let activeConversationId = conversation.id;
 
@@ -539,7 +544,6 @@ export default function App() {
       text
     });
 
-    setIsSending(true);
     setStatusText("Pesquisando fontes...");
 
     const typingId = crypto.randomUUID();
@@ -596,6 +600,7 @@ export default function App() {
         text: "Não consegui conectar ao servidor. Verifique se o Bot Financeiro está rodando."
       });
     } finally {
+      sendingLockRef.current = false;
       setIsSending(false);
       setStatusText("Online");
       inputRef.current?.focus();
@@ -605,7 +610,7 @@ export default function App() {
   async function handleSubmit(event) {
     event.preventDefault();
 
-    if (isSending) return;
+    if (isSending || sendingLockRef.current) return;
 
     const text = formatText(input);
     if (!text) return;
@@ -1003,6 +1008,7 @@ export default function App() {
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
+                  if (isSending || sendingLockRef.current) return;
                   setSubmitSource("keyboard");
                   event.currentTarget.form?.requestSubmit();
                 }
@@ -1011,15 +1017,21 @@ export default function App() {
             <button
               id="sendButton"
               type="submit"
-              aria-label="Enviar mensagem"
-              title="Enviar mensagem"
+              aria-label={isSending ? "Aguardando resposta" : "Enviar mensagem"}
+              title={isSending ? "Aguardando resposta" : "Enviar mensagem"}
               disabled={isSending}
               onPointerDown={() => setSubmitSource("button")}
             >
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <path d="M12 19V5" />
-                <path d="M5 12l7-7 7 7" />
-              </svg>
+              {isSending ? (
+                <svg className="stop-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <rect x="8" y="8" width="8" height="8" rx="1.8" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M12 19V5" />
+                  <path d="M5 12l7-7 7 7" />
+                </svg>
+              )}
             </button>
           </form>
         </section>
