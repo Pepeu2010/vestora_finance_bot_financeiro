@@ -55,6 +55,13 @@ function setDeviceId(nextDeviceId) {
 
 function showAuth() {
   currentUser = null;
+  messages = [];
+  conversations = [];
+  currentConversationId = "";
+  localStorage.removeItem(CURRENT_CONVERSATION_KEY);
+  saveLocalConversations();
+  renderConversationList();
+  renderMessages();
   authScreen.classList.add("visible");
 }
 
