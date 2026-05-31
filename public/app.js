@@ -29,6 +29,8 @@ let cloudEnabled = false;
 let submitSource = "keyboard";
 let isRegisterMode = false;
 let currentUser = null;
+let authHideTimer = null;
+const AUTH_TRANSITION_MS = 420;
 
 function getOrCreateDeviceId() {
   const saved = localStorage.getItem(DEVICE_KEY);
@@ -52,6 +54,7 @@ function setDeviceId(nextDeviceId) {
 }
 
 function showAuth() {
+  clearTimeout(authHideTimer);
   currentUser = null;
   messages = [];
   conversations = [];
@@ -60,11 +63,19 @@ function showAuth() {
   saveLocalConversations();
   renderConversationList();
   renderMessages();
-  authScreen.classList.add("visible");
+  authScreen.hidden = false;
+  authScreen.getBoundingClientRect();
+  requestAnimationFrame(() => authScreen.classList.add("visible"));
 }
 
 function hideAuth() {
+  clearTimeout(authHideTimer);
   authScreen.classList.remove("visible");
+  authHideTimer = setTimeout(() => {
+    if (!authScreen.classList.contains("visible")) {
+      authScreen.hidden = true;
+    }
+  }, AUTH_TRANSITION_MS);
 }
 
 function setAuthMode(registerMode) {

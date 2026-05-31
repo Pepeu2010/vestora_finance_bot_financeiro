@@ -1,14 +1,14 @@
 {
   "name": "Bot Financeiro",
   "short_name": "Bot Financeiro",
-  "description": "Assistente de educação financeira com IA.",
+  "description": "Assistente de educacao financeira com IA.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f3f7f5",
   "theme_color": "#0f766e",
   "icons": [
     {
-      "src": "/icon.svg?v=24",
+      "src": "/icon.svg?v=32",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"
