@@ -724,8 +724,13 @@ export default function App() {
   useEffect(() => {
     const textarea = inputRef.current;
     if (!textarea) return;
+
+    const isCompactScreen = window.matchMedia("(max-width: 900px)").matches;
+    const maxHeight = isCompactScreen ? 104 : 150;
+
     textarea.style.height = "auto";
-    textarea.style.height = `${textarea.scrollHeight}px`;
+    textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`;
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
   }, [input]);
 
   return (

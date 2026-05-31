@@ -983,6 +983,7 @@ button {
   overflow: hidden;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 52px;
+  align-items: end;
   gap: 8px;
   width: min(900px, calc(100% - 44px));
   margin: 0 auto 22px;
@@ -1018,6 +1019,7 @@ button {
 }
 
 .composer textarea {
+  min-width: 0;
   width: 100%;
   max-height: 150px;
   min-height: 48px;
@@ -1453,23 +1455,34 @@ button {
   }
 
   .composer {
-    grid-template-columns: minmax(0, 1fr) 48px;
-    width: calc(100vw - 28px);
-    margin: 0 14px max(12px, env(safe-area-inset-bottom));
-    border-radius: 28px;
-    padding: 7px;
+    grid-template-columns: minmax(0, 1fr) 44px;
+    gap: 6px;
+    width: min(520px, calc(100% - 22px));
+    min-height: 58px;
+    margin: 0 auto max(12px, env(safe-area-inset-bottom));
+    border-radius: 999px;
+    padding: 6px;
   }
 
   .composer textarea {
-    min-height: 46px;
-    padding: 12px 12px;
+    max-height: 104px;
+    min-height: 44px;
+    border-radius: 22px;
+    padding: 11px 10px 10px 12px;
     font-size: 16px;
+    line-height: 1.25;
+    scrollbar-width: thin;
   }
 
   .composer button {
-    width: 46px;
-    min-height: 46px;
+    width: 44px;
+    min-height: 44px;
     border-radius: 999px;
+  }
+
+  .composer button svg {
+    width: 22px;
+    height: 22px;
   }
 
   .message {

@@ -77,6 +77,32 @@ test.describe("UI - App React", () => {
     await expect(page.locator("#messages")).toHaveAttribute("aria-live", "polite");
   });
 
+  test("adapta a barra de mensagem no celular", async ({ page }) => {
+    await page.setViewportSize({ width: 393, height: 852 });
+    await page.goto("/");
+
+    const composer = page.locator(".composer");
+    const textarea = page.locator("#messageInput");
+    const sendButton = page.locator("#sendButton");
+
+    await expect(page.locator(".mobile-menu-button")).toBeVisible();
+    await expect(composer).toBeVisible();
+    await expect(textarea).toHaveAttribute("placeholder", "Pergunte ao Bot Financeiro");
+
+    const composerBox = await composer.boundingBox();
+    const textareaBox = await textarea.boundingBox();
+    const buttonBox = await sendButton.boundingBox();
+
+    expect(composerBox).not.toBeNull();
+    expect(textareaBox).not.toBeNull();
+    expect(buttonBox).not.toBeNull();
+
+    expect(composerBox.width).toBeLessThanOrEqual(371);
+    expect(composerBox.x).toBeGreaterThanOrEqual(10);
+    expect(buttonBox.x + buttonBox.width).toBeLessThanOrEqual(composerBox.x + composerBox.width);
+    expect(textareaBox.x + textareaBox.width).toBeLessThanOrEqual(buttonBox.x - 4);
+  });
+
   test("mantem camadas visuais futuristas", async ({ page }) => {
     await page.goto("/");
 
