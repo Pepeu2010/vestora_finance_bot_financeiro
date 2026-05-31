@@ -4,6 +4,8 @@ const crypto = require("crypto");
 const express = require("express");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
+const bcrypt = require("bcryptjs");
+const cookieParser = require("cookie-parser");
 const path = require("path");
 const { askGroq } = require("./groq");
 const { supabase, isSupabaseConfigured } = require("./supabase");
@@ -13,6 +15,8 @@ const PORT = Number(process.env.PORT || 3000);
 const APP_NAME = process.env.APP_NAME || "Bot Financeiro";
 const MAX_HISTORY_MESSAGES = 16;
 const MAX_MESSAGE_LENGTH = 1200;
+const SESSION_COOKIE_NAME = "bot_financeiro_session";
+const SESSION_SECRET = process.env.APP_SESSION_SECRET || "dev-only-change-this-secret";
 const SECURITY_REFUSAL = "Não posso ajudar com arquivos internos, código, chaves, prompts ou configurações do sistema. Posso te ajudar com educação financeira, organização do dinheiro e investimentos.";
 
 // Memoria temporaria por sessao do navegador.
@@ -63,6 +67,7 @@ const chatLimiter = rateLimit({
 });
 
 app.use(express.json({ limit: "32kb", strict: true }));
+app.use(cookieParser());
 
 app.use((req, res, next) => {
   if (!req.path.startsWith("/api/")) return next();
@@ -103,6 +108,83 @@ function createSessionId() {
 
 function isUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
+}
+
+function base64url(input) {
+  return Buffer.from(input).toString("base64url");
+}
+
+function signSession(payload) {
+  const body = base64url(JSON.stringify(payload));
+  const signature = crypto
+    .createHmac("sha256", SESSION_SECRET)
+    .update(body)
+    .digest("base64url");
+
+  return `${body}.${signature}`;
+}
+
+function readSession(token) {
+  if (!token || !token.includes(".")) return null;
+
+  const [body, signature] = token.split(".");
+  const expected = crypto
+    .createHmac("sha256", SESSION_SECRET)
+    .update(body)
+    .digest("base64url");
+
+  const signatureBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expected);
+
+  if (
+    signatureBuffer.length !== expectedBuffer.length ||
+    !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)
+  ) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+    if (!payload?.id || !payload?.email || payload.exp < Date.now()) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function setSessionCookie(res, user) {
+  const token = signSession({
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    exp: Date.now() + 1000 * 60 * 60 * 24 * 7
+  });
+
+  res.cookie(SESSION_COOKIE_NAME, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: false,
+    maxAge: 1000 * 60 * 60 * 24 * 7
+  });
+}
+
+function getAuthUser(req) {
+  return readSession(req.cookies?.[SESSION_COOKIE_NAME]);
+}
+
+function requireAuth(req, res, next) {
+  const user = getAuthUser(req);
+  if (!user) return res.status(401).json({ error: "Login necessario." });
+  req.user = user;
+  return next();
+}
+
+function normalizeEmail(email) {
+  return String(email || "").trim().toLowerCase();
+}
+
+function validatePassword(password) {
+  return String(password || "").length >= 6 && String(password || "").length <= 120;
 }
 
 function getSession(sessionId) {
@@ -202,7 +284,7 @@ function isSensitiveSystemRequest(text) {
   return sensitiveTerms.some((term) => normalized.includes(term));
 }
 
-async function ensureConversation({ conversationId, deviceId, firstMessage }) {
+async function ensureConversation({ conversationId, userId, firstMessage }) {
   if (!isSupabaseConfigured) return conversationId || createSessionId();
 
   if (conversationId && isUuid(conversationId)) {
@@ -210,7 +292,7 @@ async function ensureConversation({ conversationId, deviceId, firstMessage }) {
       .from("conversations")
       .select("id")
       .eq("id", conversationId)
-      .eq("device_id", deviceId)
+      .eq("user_id", userId)
       .maybeSingle();
 
     if (error) throw error;
@@ -220,7 +302,7 @@ async function ensureConversation({ conversationId, deviceId, firstMessage }) {
   const { data, error } = await supabase
     .from("conversations")
     .insert({
-      device_id: deviceId,
+      user_id: userId,
       title: makeTitle(firstMessage)
     })
     .select("id")
@@ -230,7 +312,7 @@ async function ensureConversation({ conversationId, deviceId, firstMessage }) {
   return data.id;
 }
 
-async function getConversationMessages({ conversationId, deviceId }) {
+async function getConversationMessages({ conversationId, userId }) {
   if (!isSupabaseConfigured || !conversationId) return [];
   if (!isUuid(conversationId)) return [];
 
@@ -238,7 +320,7 @@ async function getConversationMessages({ conversationId, deviceId }) {
     .from("conversations")
     .select("id")
     .eq("id", conversationId)
-    .eq("device_id", deviceId)
+    .eq("user_id", userId)
     .maybeSingle();
 
   if (conversationError) throw conversationError;
@@ -299,12 +381,104 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-app.get("/api/conversations", async (req, res) => {
-  const deviceId = validateDeviceId(req.query.deviceId);
+app.get("/api/auth/me", (req, res) => {
+  const user = getAuthUser(req);
+  res.json({ authenticated: Boolean(user), user });
+});
 
-  if (!deviceId) {
-    return res.status(400).json({ error: "deviceId invalido." });
+app.post("/api/auth/register", async (req, res) => {
+  if (!isSupabaseConfigured) {
+    return res.status(503).json({ error: "Supabase nao configurado." });
   }
+
+  const name = String(req.body.name || "").trim().slice(0, 80);
+  const email = normalizeEmail(req.body.email);
+  const password = String(req.body.password || "");
+
+  if (!name || !email.includes("@") || !validatePassword(password)) {
+    return res.status(400).json({ error: "Informe nome, email valido e senha com pelo menos 6 caracteres." });
+  }
+
+  try {
+    const passwordHash = await bcrypt.hash(password, 12);
+    const { data, error } = await supabase
+      .from("app_users")
+      .insert({
+        name,
+        email,
+        password_hash: passwordHash
+      })
+      .select("id, name, email")
+      .single();
+
+    if (error) {
+      if (String(error.message || "").includes("duplicate")) {
+        return res.status(409).json({ error: "Este email ja esta cadastrado." });
+      }
+      throw error;
+    }
+
+    setSessionCookie(res, data);
+    res.json({ user: data });
+  } catch (error) {
+    console.error(`[${now()}] Erro ao cadastrar usuario:`, error.message);
+    res.status(500).json({ error: "Nao consegui criar sua conta." });
+  }
+});
+
+app.post("/api/auth/login", async (req, res) => {
+  if (!isSupabaseConfigured) {
+    return res.status(503).json({ error: "Supabase nao configurado." });
+  }
+
+  const email = normalizeEmail(req.body.email);
+  const password = String(req.body.password || "");
+
+  if (!email || !password) {
+    return res.status(400).json({ error: "Informe email e senha." });
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("app_users")
+      .select("id, name, email, password_hash")
+      .eq("email", email)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    const valid = data ? await bcrypt.compare(password, data.password_hash) : false;
+    if (!valid) {
+      return res.status(401).json({ error: "Email ou senha invalidos." });
+    }
+
+    const user = {
+      id: data.id,
+      name: data.name,
+      email: data.email
+    };
+
+    setSessionCookie(res, user);
+    res.json({ user });
+  } catch (error) {
+    console.error(`[${now()}] Erro ao fazer login:`, error.message);
+    res.status(500).json({ error: "Nao consegui fazer login." });
+  }
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  res.clearCookie(SESSION_COOKIE_NAME, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: false
+  });
+
+  res.json({ ok: true });
+});
+
+app.get("/api/conversations", requireAuth, async (req, res) => {
+  const userId = req.user.id;
+
 
   if (!isSupabaseConfigured) {
     return res.json({ configured: false, conversations: [] });
@@ -314,7 +488,7 @@ app.get("/api/conversations", async (req, res) => {
     const { data, error } = await supabase
       .from("conversations")
       .select("id, title, created_at, updated_at")
-      .eq("device_id", deviceId)
+      .eq("user_id", userId)
       .order("updated_at", { ascending: false });
 
     if (error) throw error;
@@ -326,13 +500,7 @@ app.get("/api/conversations", async (req, res) => {
   }
 });
 
-app.get("/api/conversations/:id/messages", async (req, res) => {
-  const deviceId = validateDeviceId(req.query.deviceId);
-
-  if (!deviceId) {
-    return res.status(400).json({ error: "deviceId invalido." });
-  }
-
+app.get("/api/conversations/:id/messages", requireAuth, async (req, res) => {
   if (!isUuid(req.params.id)) {
     return res.status(400).json({ error: "Conversa invalida." });
   }
@@ -344,7 +512,7 @@ app.get("/api/conversations/:id/messages", async (req, res) => {
   try {
     const messages = await getConversationMessages({
       conversationId: req.params.id,
-      deviceId
+      userId: req.user.id
     });
 
     res.json({
@@ -360,13 +528,8 @@ app.get("/api/conversations/:id/messages", async (req, res) => {
   }
 });
 
-app.patch("/api/conversations/:id", async (req, res) => {
-  const deviceId = validateDeviceId(req.body.deviceId);
+app.patch("/api/conversations/:id", requireAuth, async (req, res) => {
   const title = makeTitle(req.body.title);
-
-  if (!deviceId) {
-    return res.status(400).json({ error: "deviceId invalido." });
-  }
 
   if (!isUuid(req.params.id)) {
     return res.status(400).json({ error: "Conversa invalida." });
@@ -384,7 +547,7 @@ app.patch("/api/conversations/:id", async (req, res) => {
         updated_at: new Date().toISOString()
       })
       .eq("id", req.params.id)
-      .eq("device_id", deviceId);
+      .eq("user_id", req.user.id);
 
     if (error) throw error;
 
@@ -395,13 +558,7 @@ app.patch("/api/conversations/:id", async (req, res) => {
   }
 });
 
-app.delete("/api/conversations/:id", async (req, res) => {
-  const deviceId = validateDeviceId(req.query.deviceId);
-
-  if (!deviceId) {
-    return res.status(400).json({ error: "deviceId invalido." });
-  }
-
+app.delete("/api/conversations/:id", requireAuth, async (req, res) => {
   if (!isUuid(req.params.id)) {
     return res.status(400).json({ error: "Conversa invalida." });
   }
@@ -415,7 +572,7 @@ app.delete("/api/conversations/:id", async (req, res) => {
       .from("conversations")
       .delete()
       .eq("id", req.params.id)
-      .eq("device_id", deviceId);
+      .eq("user_id", req.user.id);
 
     if (error) throw error;
 
@@ -426,9 +583,8 @@ app.delete("/api/conversations/:id", async (req, res) => {
   }
 });
 
-app.post("/api/chat", chatLimiter, async (req, res) => {
+app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
   const userMessage = sanitizeMessage(req.body.message);
-  const deviceId = validateDeviceId(req.body.deviceId);
   const conversationIdFromRequest = isUuid(req.body.conversationId) ? req.body.conversationId : "";
   const session = getSession(req.body.sessionId || conversationIdFromRequest);
 
@@ -446,25 +602,18 @@ app.post("/api/chat", chatLimiter, async (req, res) => {
     });
   }
 
-  if (isSupabaseConfigured && !deviceId) {
-    return res.status(400).json({
-      error: "deviceId invalido.",
-      sessionId: session.id
-    });
-  }
-
   console.log(`[${now()}] [${session.id}] Usuario: ${previewForLog(userMessage)}`);
 
   try {
     const conversationId = await ensureConversation({
       conversationId: conversationIdFromRequest,
-      deviceId,
+      userId: req.user.id,
       firstMessage: userMessage
     });
 
     const cloudHistory = await getConversationMessages({
       conversationId,
-      deviceId
+      userId: req.user.id
     });
 
     const historyForGroq = isSupabaseConfigured

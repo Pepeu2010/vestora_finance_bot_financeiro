@@ -6,9 +6,9 @@
     <meta name="theme-color" content="#0f766e">
     <meta name="description" content="Bot Financeiro, um assistente de educacao financeira com IA.">
     <title>Bot Financeiro</title>
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=21">
-    <link rel="manifest" href="/manifest.json?v=21">
-    <link rel="stylesheet" href="/style.css?v=21">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=22">
+    <link rel="manifest" href="/manifest.json?v=22">
+    <link rel="stylesheet" href="/style.css?v=22">
   </head>
   <body>
     <div class="ambient" aria-hidden="true">
@@ -18,11 +18,32 @@
       <div class="signal signal-b"></div>
     </div>
 
+    <section class="auth-screen" id="authScreen" aria-label="Login do Bot Financeiro">
+      <form class="auth-card" id="authForm">
+        <div class="brand auth-brand">
+          <div class="brand-mark" aria-hidden="true">
+            <img src="/icon.svg?v=22" alt="">
+          </div>
+          <div>
+            <h1>Bot Financeiro</h1>
+            <p>Acesse seu histórico</p>
+          </div>
+        </div>
+
+        <input id="authName" name="name" type="text" placeholder="Nome" autocomplete="name">
+        <input id="authEmail" name="email" type="email" placeholder="Email" autocomplete="email" required>
+        <input id="authPassword" name="password" type="password" placeholder="Senha" autocomplete="current-password" required minlength="6">
+        <p class="auth-error" id="authError" role="alert"></p>
+        <button id="authSubmit" type="submit">Entrar</button>
+        <button class="auth-toggle" id="authToggle" type="button">Criar conta</button>
+      </form>
+    </section>
+
     <main class="app-shell">
       <aside class="sidebar" aria-label="Painel do Bot Financeiro">
         <div class="brand">
           <div class="brand-mark" aria-hidden="true">
-            <img src="/icon.svg?v=21" alt="">
+            <img src="/icon.svg?v=22" alt="">
           </div>
           <div>
             <h1>Bot Financeiro</h1>
@@ -53,7 +74,7 @@
           <div class="history-head">
             <span>Conversas</span>
             <div class="history-actions">
-              <button id="syncButton" type="button">Sincronizar</button>
+              <button id="syncButton" type="button">Atualizar</button>
               <small id="storageStatus">local</small>
             </div>
           </div>
@@ -75,6 +96,7 @@
             <span></span>
             IA ativa
           </div>
+          <button class="logout-button" id="logoutButton" type="button">Sair</button>
         </header>
 
         <div class="messages" id="messages" aria-live="polite"></div>
@@ -93,6 +115,6 @@
       </section>
     </main>
 
-    <script src="/app.js?v=21"></script>
+    <script src="/app.js?v=22"></script>
   </body>
 </html>

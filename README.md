@@ -31,16 +31,18 @@ O app funciona sem login. Cada navegador recebe um identificador anonimo e as co
 1. Crie um projeto no Supabase.
 2. Abra o SQL Editor.
 3. Execute o arquivo `supabase.sql`.
-4. No arquivo `.env`, preencha:
+4. Execute tambem o arquivo `supabase-auth.sql` para habilitar login.
+5. No arquivo `.env`, preencha:
 
 ```env
 SUPABASE_URL=sua_url_do_supabase
 SUPABASE_SERVICE_ROLE_KEY=sua_service_role_key
+APP_SESSION_SECRET=um_texto_grande_e_aleatorio
 ```
 
-5. Reinicie o servidor.
+6. Reinicie o servidor.
 
-Sem essas variaveis, o app continua funcionando com historico local no navegador.
+Sem essas variaveis, o app continua funcionando parcialmente, mas login e historico em nuvem precisam do Supabase configurado.
 
 ## Seguranca
 

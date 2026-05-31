@@ -8,6 +8,15 @@ const promptButtons = document.querySelectorAll("[data-prompt]");
 const conversationListEl = document.querySelector("#conversationList");
 const storageStatusEl = document.querySelector("#storageStatus");
 const syncButton = document.querySelector("#syncButton");
+const authScreen = document.querySelector("#authScreen");
+const authForm = document.querySelector("#authForm");
+const authName = document.querySelector("#authName");
+const authEmail = document.querySelector("#authEmail");
+const authPassword = document.querySelector("#authPassword");
+const authError = document.querySelector("#authError");
+const authSubmit = document.querySelector("#authSubmit");
+const authToggle = document.querySelector("#authToggle");
+const logoutButton = document.querySelector("#logoutButton");
 
 const DEVICE_KEY = "bot-financeiro-device-id";
 const CONVERSATIONS_KEY = "bot-financeiro-conversations";
@@ -20,6 +29,8 @@ let messages = getCurrentMessages();
 let isSending = false;
 let cloudEnabled = false;
 let submitSource = "keyboard";
+let isRegisterMode = false;
+let currentUser = null;
 
 function getOrCreateDeviceId() {
   const saved = localStorage.getItem(DEVICE_KEY);
@@ -39,6 +50,37 @@ function setDeviceId(nextDeviceId) {
 
   deviceId = clean;
   localStorage.setItem(DEVICE_KEY, deviceId);
+  return true;
+}
+
+function showAuth() {
+  currentUser = null;
+  authScreen.classList.add("visible");
+}
+
+function hideAuth() {
+  authScreen.classList.remove("visible");
+}
+
+function setAuthMode(registerMode) {
+  isRegisterMode = registerMode;
+  authName.style.display = registerMode ? "block" : "none";
+  authSubmit.textContent = registerMode ? "Criar conta" : "Entrar";
+  authToggle.textContent = registerMode ? "Já tenho conta" : "Criar conta";
+  authError.textContent = "";
+}
+
+async function checkAuth() {
+  const response = await fetch("/api/auth/me");
+  const data = await response.json();
+
+  if (!data.authenticated) {
+    showAuth();
+    return false;
+  }
+
+  currentUser = data.user;
+  hideAuth();
   return true;
 }
 
@@ -328,8 +370,16 @@ function resizeInput() {
 }
 
 async function loadCloudConversations() {
+  if (!currentUser) return;
+
   try {
-    const response = await fetch(`/api/conversations?deviceId=${encodeURIComponent(deviceId)}`);
+    const response = await fetch("/api/conversations");
+
+    if (response.status === 401) {
+      showAuth();
+      return;
+    }
+
     const data = await response.json();
 
     cloudEnabled = Boolean(data.configured);
@@ -375,34 +425,13 @@ async function loadCloudConversations() {
 }
 
 async function syncDeviceHistory() {
-  const typed = window.prompt(
-    "Para usar o mesmo histórico em outro navegador, copie este código e cole no outro navegador. Para entrar em outro histórico, cole o código aqui:",
-    deviceId
-  );
-
-  if (typed === null) return;
-
-  if (!setDeviceId(typed)) {
-    window.alert("Código inválido. Use apenas letras, números, _ ou -, com pelo menos 12 caracteres.");
-    return;
-  }
-
-  currentConversationId = "";
-  messages = [];
-  conversations = [];
-  localStorage.removeItem(CURRENT_CONVERSATION_KEY);
-  saveLocalConversations();
-  renderConversationList();
-  renderMessages();
   await loadCloudConversations();
 }
 
 async function loadCloudMessages(conversationId) {
   if (!cloudEnabled) return null;
 
-  const response = await fetch(
-    `/api/conversations/${conversationId}/messages?deviceId=${encodeURIComponent(deviceId)}`
-  );
+  const response = await fetch(`/api/conversations/${conversationId}/messages`);
   const data = await response.json();
 
   if (!response.ok || !data.configured) return null;
@@ -439,7 +468,7 @@ async function openConversation(conversationId) {
 
 async function deleteConversation(conversationId) {
   if (cloudEnabled) {
-    await fetch(`/api/conversations/${conversationId}?deviceId=${encodeURIComponent(deviceId)}`, {
+    await fetch(`/api/conversations/${conversationId}`, {
       method: "DELETE"
     }).catch(() => {});
   }
@@ -476,7 +505,6 @@ async function sendMessage(text) {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        deviceId,
         conversationId: currentConversationId,
         message: text
       })
@@ -585,6 +613,65 @@ promptButtons.forEach((button) => {
 
 syncButton.addEventListener("click", syncDeviceHistory);
 
+authToggle.addEventListener("click", () => {
+  setAuthMode(!isRegisterMode);
+});
+
+authForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  authError.textContent = "";
+  authSubmit.disabled = true;
+
+  try {
+    const response = await fetch(isRegisterMode ? "/api/auth/register" : "/api/auth/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        name: authName.value,
+        email: authEmail.value,
+        password: authPassword.value
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      authError.textContent = data.error || "Não foi possível entrar.";
+      return;
+    }
+
+    currentUser = data.user;
+    hideAuth();
+    currentConversationId = "";
+    messages = [];
+    conversations = [];
+    localStorage.removeItem(CURRENT_CONVERSATION_KEY);
+    saveLocalConversations();
+    renderMessages();
+    await loadCloudConversations();
+  } catch {
+    authError.textContent = "Não consegui conectar ao servidor.";
+  } finally {
+    authSubmit.disabled = false;
+  }
+});
+
+logoutButton.addEventListener("click", async () => {
+  await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+  currentUser = null;
+  currentConversationId = "";
+  messages = [];
+  conversations = [];
+  localStorage.removeItem(CURRENT_CONVERSATION_KEY);
+  saveLocalConversations();
+  renderConversationList();
+  renderMessages();
+  showAuth();
+});
+
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js").catch(() => {});
@@ -594,4 +681,7 @@ if ("serviceWorker" in navigator) {
 renderConversationList();
 renderMessages();
 resizeInput();
-loadCloudConversations();
+setAuthMode(false);
+checkAuth().then((authenticated) => {
+  if (authenticated) loadCloudConversations();
+});
