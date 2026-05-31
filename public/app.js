@@ -6,7 +6,6 @@ const statusText = document.querySelector("#statusText");
 const newChatButton = document.querySelector("#newChatButton");
 const promptButtons = document.querySelectorAll("[data-prompt]");
 const conversationListEl = document.querySelector("#conversationList");
-const storageStatusEl = document.querySelector("#storageStatus");
 const authScreen = document.querySelector("#authScreen");
 const authForm = document.querySelector("#authForm");
 const authName = document.querySelector("#authName");
@@ -389,8 +388,6 @@ async function loadCloudConversations() {
     const data = await response.json();
 
     cloudEnabled = Boolean(data.configured);
-    storageStatusEl.textContent = cloudEnabled ? "nuvem" : "local";
-
     if (!cloudEnabled || !Array.isArray(data.conversations)) return;
 
     const previousConversations = new Map(
@@ -426,7 +423,6 @@ async function loadCloudConversations() {
     renderConversationList();
   } catch {
     cloudEnabled = false;
-    storageStatusEl.textContent = "local";
   }
 }
 

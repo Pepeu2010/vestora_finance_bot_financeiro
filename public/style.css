@@ -325,13 +325,6 @@ button {
   font-weight: 800;
 }
 
-.history-head small {
-  border: 1px solid rgba(190, 255, 232, 0.16);
-  border-radius: 999px;
-  padding: 4px 8px;
-  color: #b8d8cd;
-}
-
 .conversation-list {
   display: grid;
   gap: 8px;
