@@ -219,25 +219,37 @@ function MessageBubble({ message }) {
   return <article className="message user">{message.text}</article>;
 }
 
-function WelcomeMessage() {
+function StartScreen({ onPrompt }) {
   return (
-    <article
-      className="message bot"
-      dangerouslySetInnerHTML={{
-        __html: renderMarkdown(
-          "Olá. Sou o Bot Financeiro. Posso te ajudar a organizar dinheiro, montar reserva, entender investimentos, FIIs, financiamento, imóveis e planejamento. Qual decisão financeira você quer clarear hoje?"
-        )
-      }}
-    />
+    <section className="start-screen" aria-label="Novo chat">
+      <div className="start-brand" aria-hidden="true">
+        <img src="/icon.svg?v=34" alt="" />
+      </div>
+      <p className="start-kicker">Bot Financeiro</p>
+      <h2>Qual decisão financeira você quer clarear hoje?</h2>
+      <p className="start-copy">
+        Pergunte sobre dinheiro, imóveis, financiamento, investimentos, dívidas ou planejamento.
+      </p>
+      <div className="summary start-prompts" aria-label="Sugestões de conversa">
+        {QUICK_PROMPTS.map((item) => (
+          <button
+            key={item.label}
+            type="button"
+            data-prompt={item.prompt}
+            onClick={() => onPrompt(item.prompt)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 
 export default function App() {
   const [deviceId] = useState(getOrCreateDeviceId);
   const [conversations, setConversations] = useState(loadLocalConversations);
-  const [currentConversationId, setCurrentConversationId] = useState(
-    () => localStorage.getItem(CURRENT_CONVERSATION_KEY) || ""
-  );
+  const [currentConversationId, setCurrentConversationId] = useState("");
   const [input, setInput] = useState("");
   const [statusText, setStatusText] = useState("Online");
   const [isSending, setIsSending] = useState(false);
@@ -456,8 +468,8 @@ export default function App() {
         return nextConversations;
       });
 
-      if (!currentConversationId && cloudConversations[0]) {
-        await openConversation(cloudConversations[0].id);
+      if (!currentConversationId) {
+        localStorage.removeItem(CURRENT_CONVERSATION_KEY);
       }
     } catch {
       setCloudEnabled(false);
@@ -483,10 +495,7 @@ export default function App() {
     const nextConversations = conversations.filter(
       (conversation) => conversation.id !== conversationId
     );
-    const nextCurrentId =
-      currentConversationId === conversationId
-        ? nextConversations[0]?.id || ""
-        : currentConversationId;
+    const nextCurrentId = currentConversationId === conversationId ? "" : currentConversationId;
 
     setCurrentConversationId(nextCurrentId);
     localStorage.setItem(CURRENT_CONVERSATION_KEY, nextCurrentId);
@@ -780,7 +789,12 @@ export default function App() {
             </div>
           </div>
 
-          <section className="insight-panel" aria-label="Visao financeira">
+          <button className="new-chat" id="newChatButton" type="button" onClick={handleNewChat}>
+            <span aria-hidden="true">+</span>
+            Novo chat
+          </button>
+
+          <section className="insight-panel sidebar-focus" aria-label="Visao financeira">
             <div>
               <span>Foco atual</span>
               <strong>Clareza financeira</strong>
@@ -790,25 +804,9 @@ export default function App() {
             </div>
           </section>
 
-          <section className="summary" aria-label="Temas principais">
-            {QUICK_PROMPTS.map((item) => (
-              <button
-                key={item.label}
-                type="button"
-                data-prompt={item.prompt}
-                onClick={() => {
-                  setInput(item.prompt);
-                  inputRef.current?.focus();
-                }}
-              >
-                {item.label}
-              </button>
-            ))}
-          </section>
-
           <section className="history-panel" aria-label="Histórico de conversas">
             <div className="history-head">
-              <span>Conversas</span>
+              <span>Recentes</span>
             </div>
             <div className="conversation-list" id="conversationList">
               {conversations.length === 0 ? (
@@ -842,9 +840,6 @@ export default function App() {
             </div>
           </section>
 
-          <button className="new-chat" id="newChatButton" type="button" onClick={handleNewChat}>
-            Nova conversa
-          </button>
         </aside>
 
         <section className="chat-panel" aria-label="Conversa com o Bot Financeiro">
@@ -864,9 +859,19 @@ export default function App() {
             </div>
           </header>
 
-          <div className="messages" id="messages" aria-live="polite" ref={messagesRef}>
+          <div
+            className={`messages${messages.length === 0 ? " empty" : ""}`}
+            id="messages"
+            aria-live="polite"
+            ref={messagesRef}
+          >
             {messages.length === 0 ? (
-              <WelcomeMessage />
+              <StartScreen
+                onPrompt={(prompt) => {
+                  setInput(prompt);
+                  inputRef.current?.focus();
+                }}
+              />
             ) : (
               messages.map((message) => <MessageBubble key={message.id} message={message} />)
             )}
