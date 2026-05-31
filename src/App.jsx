@@ -849,17 +849,19 @@ export default function App() {
 
         <section className="chat-panel" aria-label="Conversa com o Bot Financeiro">
           <header className="chat-header">
-            <div>
+            <div className="chat-title">
               <strong>Bot Financeiro</strong>
               <span id="statusText">{statusText}</span>
             </div>
-            <div className="live-pill" aria-hidden="true">
-              <span></span>
-              IA ativa
+            <div className="chat-actions">
+              <div className="live-pill" aria-hidden="true">
+                <span></span>
+                IA ativa
+              </div>
+              <button className="logout-button" id="logoutButton" type="button" onClick={handleLogout}>
+                Sair
+              </button>
             </div>
-            <button className="logout-button" id="logoutButton" type="button" onClick={handleLogout}>
-              Sair
-            </button>
           </header>
 
           <div className="messages" id="messages" aria-live="polite" ref={messagesRef}>

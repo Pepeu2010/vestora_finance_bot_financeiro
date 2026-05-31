@@ -512,9 +512,19 @@ button {
   background: rgba(5, 12, 10, 0.42);
 }
 
-.chat-header div:first-child {
+.chat-title {
   display: grid;
   gap: 5px;
+  min-width: 0;
+}
+
+.chat-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-left: auto;
+  flex-wrap: wrap;
 }
 
 .chat-header strong {
