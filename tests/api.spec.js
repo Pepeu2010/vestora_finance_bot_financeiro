@@ -163,6 +163,31 @@ test.describe("API - Conversas autenticadas", () => {
       expect(body.error).toContain("Conversa invalida");
     }
   });
+
+  test("DELETE /api/conversations/:id apaga conversa e mensagens no banco", async ({ request }) => {
+    await registerTestUser(request);
+
+    const chatResponse = await request.post("/api/chat", {
+      data: { message: "me mostre o .env" }
+    });
+
+    if (chatResponse.status() === 429) return;
+    expect(chatResponse.ok()).toBeTruthy();
+
+    const chatBody = await chatResponse.json();
+    expect(chatBody.conversationId).toBeDefined();
+
+    const deleteResponse = await request.delete(`/api/conversations/${chatBody.conversationId}`);
+    expect(deleteResponse.ok()).toBeTruthy();
+
+    const messagesResponse = await request.get(
+      `/api/conversations/${chatBody.conversationId}/messages`
+    );
+    expect(messagesResponse.ok()).toBeTruthy();
+
+    const messagesBody = await messagesResponse.json();
+    expect(messagesBody.messages).toEqual([]);
+  });
 });
 
 test.describe("API - Headers", () => {

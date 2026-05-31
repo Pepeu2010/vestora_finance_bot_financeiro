@@ -712,13 +712,33 @@ app.delete("/api/conversations/:id", requireAuth, async (req, res) => {
   }
 
   try {
-    const { error } = await supabase
+    const { data: conversation, error: conversationError } = await supabase
+      .from("conversations")
+      .select("id")
+      .eq("id", req.params.id)
+      .eq("user_id", req.user.id)
+      .maybeSingle();
+
+    if (conversationError) throw conversationError;
+
+    if (!conversation) {
+      return res.status(404).json({ error: "Conversa nao encontrada." });
+    }
+
+    const { error: messagesError } = await supabase
+      .from("messages")
+      .delete()
+      .eq("conversation_id", conversation.id);
+
+    if (messagesError) throw messagesError;
+
+    const { error: deleteError } = await supabase
       .from("conversations")
       .delete()
-      .eq("id", req.params.id)
+      .eq("id", conversation.id)
       .eq("user_id", req.user.id);
 
-    if (error) throw error;
+    if (deleteError) throw deleteError;
 
     res.json({ configured: true });
   } catch (error) {
