@@ -268,6 +268,104 @@ function isMinhaCasaMinhaVidaQuestion(message) {
   );
 }
 
+function getTemporalGuardFacts() {
+  return {
+    topic: "Contexto temporal 2026",
+    verified: true,
+    checkedAt: new Date().toISOString(),
+    instruction:
+      "Estamos em 2026. A pesquisa online nao foi usada nesta resposta. Para qualquer numero atual, regra vigente, taxa, cotacao, preco, rendimento, imposto ou programa publico que nao esteja nos dados oficiais enviados, nao invente. Diga que precisa confirmar em fonte oficial ou peca dados atuais ao usuario.",
+    facts:
+      "Use 2026 como ano de referencia. Dados de mercado, leis, programas publicos, indicadores economicos, impostos e financiamento podem mudar."
+  };
+}
+
+async function getGeneralOfficialSourcesFacts(message) {
+  const normalized = normalizeText(message);
+  const sourceGroups = [
+    {
+      topic: "Mercado financeiro e investimentos",
+      terms: ["acao", "acoes", "fii", "fundo imobiliario", "cvm", "b3", "corretora", "investimento"],
+      sources: [
+        {
+          name: "CVM - Portal do Investidor",
+          url: "https://www.gov.br/investidor/pt-br",
+          terms: ["investidor", "riscos", "mercado"]
+        },
+        {
+          name: "B3 - Produtos e servicos",
+          url: "https://www.b3.com.br/pt_br/produtos-e-servicos/",
+          terms: ["produtos", "servicos", "renda variavel"]
+        }
+      ]
+    },
+    {
+      topic: "Financiamento e imoveis",
+      terms: ["imovel", "imoveis", "financiamento", "corretor", "cartorio", "entrada", "parcela"],
+      sources: [
+        {
+          name: "CAIXA - Habitacao",
+          url: "https://www.caixa.gov.br/voce/habitacao/Paginas/default.aspx",
+          terms: ["habitacao", "financiamento", "imovel"]
+        },
+        {
+          name: "Banco Central - Cidadania Financeira",
+          url: "https://www.bcb.gov.br/cidadaniafinanceira",
+          terms: ["educacao financeira", "cidadao", "credito"]
+        }
+      ]
+    },
+    {
+      topic: "Impostos e declaracao",
+      terms: ["imposto", "receita", "ir", "declaracao", "tributo"],
+      sources: [
+        {
+          name: "Receita Federal",
+          url: "https://www.gov.br/receitafederal/pt-br",
+          terms: ["receita federal", "imposto", "cpf"]
+        }
+      ]
+    }
+  ];
+
+  const group = sourceGroups.find((item) =>
+    item.terms.some((term) => normalized.includes(normalizeText(term)))
+  );
+
+  if (!group) return null;
+
+  const results = await Promise.allSettled(
+    group.sources.map(async (source) => {
+      const text = await fetchText(source.url);
+      return {
+        ...source,
+        snippet: findSnippet(text, source.terms, 380)
+      };
+    })
+  );
+
+  const available = results
+    .filter((result) => result.status === "fulfilled" && result.value.snippet)
+    .map((result) => result.value);
+
+  if (available.length === 0) return null;
+
+  return {
+    topic: group.topic,
+    verified: true,
+    checkedAt: new Date().toISOString(),
+    instruction:
+      "Use estas fontes apenas como apoio geral. Se o usuario pedir regra, taxa ou valor exato e isso nao estiver nos trechos, nao invente; diga para confirmar na fonte oficial.",
+    facts:
+      "Pesquisa online ativada pelo usuario. Foram consultadas fontes institucionais/oficiais relacionadas ao tema para reduzir risco de informacao desatualizada.",
+    sources: available.map((source) => ({
+      name: source.name,
+      url: source.url,
+      snippet: source.snippet
+    }))
+  };
+}
+
 async function getMinhaCasaMinhaVidaFacts() {
   const sources = [
     {
@@ -321,7 +419,13 @@ async function getMinhaCasaMinhaVidaFacts() {
   };
 }
 
-async function getOfficialFactsForMessage(message) {
+async function getOfficialFactsForMessage(message, options = {}) {
+  const online = options.online !== false;
+
+  if (!online) {
+    return getTemporalGuardFacts();
+  }
+
   const facts = [];
 
   if (isMinhaCasaMinhaVidaQuestion(message)) {
@@ -340,6 +444,11 @@ async function getOfficialFactsForMessage(message) {
 
   if (isTaxOrGuaranteeQuestion(message)) {
     facts.push(getTaxAndGuaranteeFacts());
+  }
+
+  if (facts.length === 0) {
+    const generalFacts = await getGeneralOfficialSourcesFacts(message).catch(() => null);
+    if (generalFacts) facts.push(generalFacts);
   }
 
   if (facts.length === 0) {
