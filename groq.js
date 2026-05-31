@@ -9,7 +9,7 @@ if (!apiKey || apiKey === "COLE_SUA_CHAVE_GROQ_AQUI") {
   console.warn("[Groq] Configure GROQ_API_KEY no arquivo .env antes de usar respostas reais.");
 }
 
-function formatMessages({ message, history, profileSummary, officialFacts }) {
+function formatMessages({ message, history, profileSummary, officialFacts, internetResults }) {
   const currentDate = new Date().toLocaleDateString("pt-BR", {
     timeZone: "America/Sao_Paulo",
     year: "numeric",
@@ -30,6 +30,8 @@ Regra adicional obrigatoria:
 - Se a pergunta envolver dados que mudam com frequencia, como programa habitacional, taxa, faixa de renda, imposto, Selic, CDI, regra de financiamento ou valor de subsidio, nao chute. Informe a incerteza, use apenas dados que recebeu no prompt e recomende confirmar na fonte oficial.
 - Se perceber que uma informacao pode estar desatualizada, diga isso claramente em vez de responder com certeza.
 - Se receber "Dados oficiais verificados", use esses dados acima da memoria e acima do seu conhecimento geral. Nao contradiga esses dados.
+- Se receber "Resultados de pesquisa na internet", use esses resultados como contexto atual e priorize-os sobre conhecimento interno. Se os resultados forem fracos ou insuficientes, diga isso com clareza e nao invente.
+- Nao mencione ferramentas internas usadas para pesquisar. Se for util, cite apenas o nome da fonte ou site encontrado.
 - Para economizar tokens, responda de forma objetiva: normalmente 4 a 8 frases ou ate 5 bullets curtos.
 - So escreva respostas longas quando o usuario pedir detalhes, comparacao completa, plano passo a passo ou tabela.
 - Evite repetir avisos longos; cite riscos de forma curta e clara.
@@ -48,6 +50,13 @@ Regra adicional obrigatoria:
     messages.push({
       role: "system",
       content: `Dados oficiais verificados para esta pergunta:\n${JSON.stringify(officialFacts, null, 2)}`
+    });
+  }
+
+  if (internetResults) {
+    messages.push({
+      role: "system",
+      content: `Resultados de pesquisa na internet para esta pergunta:\n${JSON.stringify(internetResults, null, 2)}`
     });
   }
 
@@ -73,7 +82,7 @@ function cleanModelAnswer(text) {
     .trim();
 }
 
-async function askGroq({ message, history, profileSummary, officialFacts }) {
+async function askGroq({ message, history, profileSummary, officialFacts, internetResults }) {
   if (!apiKey || apiKey === "COLE_SUA_CHAVE_GROQ_AQUI") {
     return "A chave da Groq ainda nao foi configurada. Edite o arquivo .env, insira sua GROQ_API_KEY e reinicie o servidor.";
   }
@@ -86,7 +95,7 @@ async function askGroq({ message, history, profileSummary, officialFacts }) {
     },
     body: JSON.stringify({
       model,
-      messages: formatMessages({ message, history, profileSummary, officialFacts }),
+      messages: formatMessages({ message, history, profileSummary, officialFacts, internetResults }),
       temperature: 0.2,
       max_tokens: maxTokens
     })

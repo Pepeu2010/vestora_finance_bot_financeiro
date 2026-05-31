@@ -10,6 +10,7 @@ const fs = require("fs");
 const path = require("path");
 const { askGroq } = require("./groq");
 const { getOfficialFactsForMessage } = require("./officialFacts");
+const { pesquisarInternet, shouldPesquisarInternet } = require("./internetSearch");
 const { supabase, isSupabaseConfigured } = require("./supabase");
 
 const app = express();
@@ -819,13 +820,6 @@ app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
       ? cloudHistory.slice(-MAX_HISTORY_MESSAGES)
       : session.history.slice(-MAX_HISTORY_MESSAGES);
 
-    const officialFacts = await getOfficialFactsForMessage(userMessage, {
-      online: true
-    }).catch((error) => {
-      console.warn(`[${now()}] [${session.id}] Nao consegui buscar fonte oficial:`, error.message);
-      return null;
-    });
-
     await saveCloudMessage({
       conversationId,
       role: "user",
@@ -851,6 +845,21 @@ app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
       });
     }
 
+    const [officialFacts, internetResults] = await Promise.all([
+      getOfficialFactsForMessage(userMessage, {
+        online: true
+      }).catch((error) => {
+        console.warn(`[${now()}] [${session.id}] Nao consegui buscar fonte oficial:`, error.message);
+        return null;
+      }),
+      shouldPesquisarInternet(userMessage)
+        ? pesquisarInternet(userMessage).catch((error) => {
+            console.warn(`[${now()}] [${session.id}] Nao consegui pesquisar na internet:`, error.message);
+            return null;
+          })
+        : Promise.resolve(null)
+    ]);
+
     const quickAnswer = tryQuickCalculator(userMessage, session, officialFacts);
     if (quickAnswer) {
       addToHistory(session, "user", userMessage);
@@ -875,7 +884,8 @@ app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
       message: userMessage,
       history: historyForGroq,
       profileSummary: getProfileSummary(session),
-      officialFacts
+      officialFacts,
+      internetResults
     });
 
     addToHistory(session, "user", userMessage);
