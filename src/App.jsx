@@ -448,25 +448,30 @@ export default function App() {
 
       if (!configured || !Array.isArray(data.conversations)) return;
 
-      const previousConversations = new Map(
-        conversations.map((conversation) => [conversation.id, conversation])
-      );
+      const cloudConversations = data.conversations;
 
-      const nextConversations = data.conversations.map((conversation) => {
-        const previous = previousConversations.get(conversation.id);
-        return {
-          id: conversation.id,
-          title: conversation.title,
-          messages: previous?.messages || [],
-          createdAt: conversation.created_at,
-          updatedAt: conversation.updated_at
-        };
+      setConversations((previous) => {
+        const previousConversations = new Map(
+          previous.map((conversation) => [conversation.id, conversation])
+        );
+
+        const nextConversations = cloudConversations.map((conversation) => {
+          const previousConversation = previousConversations.get(conversation.id);
+          return {
+            id: conversation.id,
+            title: conversation.title,
+            messages: previousConversation?.messages || [],
+            createdAt: conversation.created_at,
+            updatedAt: conversation.updated_at
+          };
+        });
+
+        saveLocalConversations(nextConversations);
+        return nextConversations;
       });
 
-      persistConversations(nextConversations);
-
-      if (!currentConversationId && nextConversations[0]) {
-        await openConversation(nextConversations[0].id);
+      if (!currentConversationId && cloudConversations[0]) {
+        await openConversation(cloudConversations[0].id);
       }
     } catch {
       setCloudEnabled(false);
