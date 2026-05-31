@@ -356,9 +356,9 @@ function tryQuickCalculator(text, session, officialFacts) {
   ) {
     const checked = officialFacts?.verified
       ? "Conferi fontes oficiais antes de responder."
-      : "Nao consegui confirmar online agora, entao use isto como referencia e valide na CAIXA/Ministerio das Cidades.";
+      : "Não consegui confirmar online agora, então use isto como referência e valide na CAIXA/Ministério das Cidades.";
 
-    return `${checked}\n\nSobre o **Minha Casa, Minha Vida**, familias em area urbana podem entrar no programa com renda bruta familiar mensal de ate **R$ 13.000**.\n\nFaixas urbanas atuais: **Faixa 1 ate R$ 3.200**, **Faixa 2 de R$ 3.200,01 a R$ 5.000**, **Faixa 3 de R$ 5.000,01 a R$ 9.600** e **Faixa 4 ate R$ 13.000**. Para a Faixa 4, o MCMV Classe Media tem regras especificas, como imovel de ate R$ 600 mil.\n\nProximo passo: confirme sua renda familiar bruta, cidade, valor do imovel e entrada disponivel. Antes de fechar contrato, valide no simulador da CAIXA ou em uma agencia, porque taxas, subsidio e aprovacao dependem do perfil e da data.`;
+    return `${checked}\n\nSobre o **Minha Casa, Minha Vida**, famílias em área urbana podem entrar no programa com renda bruta familiar mensal de até **R$ 13.000**.\n\nFaixas urbanas atuais: **Faixa 1 até R$ 3.200**, **Faixa 2 de R$ 3.200,01 a R$ 5.000**, **Faixa 3 de R$ 5.000,01 a R$ 9.600** e **Faixa 4 até R$ 13.000**. Para a Faixa 4, o MCMV Classe Média tem regras específicas, como imóvel de até R$ 600 mil.\n\nPróximo passo: confirme sua renda familiar bruta, cidade, valor do imóvel e entrada disponível. Antes de fechar contrato, valide no simulador da CAIXA ou em uma agência, porque taxas, subsídio e aprovação dependem do perfil e da data.`;
   }
 
   if (macroFacts?.facts && (normalized.includes("selic") || normalized.includes("ipca") || normalized.includes("cdi"))) {
