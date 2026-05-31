@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Analytics } from "@vercel/analytics/react";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 
 const DEVICE_KEY = "bot-financeiro-device-id";
 const CONVERSATIONS_KEY = "bot-financeiro-conversations";
@@ -675,6 +676,7 @@ export default function App() {
   return (
     <>
       <Analytics />
+      <SpeedInsights />
 
       <div className="ambient" aria-hidden="true">
         <div className="grid-layer"></div>
