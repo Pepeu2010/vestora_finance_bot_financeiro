@@ -281,6 +281,7 @@ export default function App() {
   const [authForm, setAuthForm] = useState({ name: "", email: "", password: "" });
   const [composerBurst, setComposerBurst] = useState("");
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const messagesRef = useRef(null);
   const inputRef = useRef(null);
@@ -448,6 +449,7 @@ export default function App() {
     }
 
     setStatusText("Online");
+    setIsSidebarOpen(false);
   }
 
   async function loadCloudConversations() {
@@ -654,6 +656,7 @@ export default function App() {
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
     setAccountMenuOpen(false);
+    setIsSidebarOpen(false);
     setCurrentUser(null);
     setCurrentConversationId("");
     localStorage.removeItem(CURRENT_CONVERSATION_KEY);
@@ -665,6 +668,7 @@ export default function App() {
     setCurrentConversationId("");
     localStorage.removeItem(CURRENT_CONVERSATION_KEY);
     setStatusText("Online");
+    setIsSidebarOpen(false);
     inputRef.current?.focus();
   }
 
@@ -806,7 +810,14 @@ export default function App() {
       )}
 
       <main className="app-shell">
-        <aside className="sidebar" aria-label="Painel do Bot Financeiro">
+        <button
+          className={`sidebar-scrim${isSidebarOpen ? " open" : ""}`}
+          type="button"
+          aria-label="Fechar menu"
+          onClick={() => setIsSidebarOpen(false)}
+        ></button>
+
+        <aside className={`sidebar${isSidebarOpen ? " open" : ""}`} aria-label="Painel do Bot Financeiro">
           <div className="brand">
             <div className="brand-mark" aria-hidden="true">
               <img src="/icon.svg?v=34" alt="" />
@@ -925,6 +936,15 @@ export default function App() {
 
         <section className="chat-panel" aria-label="Conversa com o Bot Financeiro">
           <header className="chat-header">
+            <button
+              className="mobile-menu-button"
+              type="button"
+              aria-label="Abrir menu"
+              onClick={() => setIsSidebarOpen(true)}
+            >
+              <span></span>
+              <span></span>
+            </button>
             <div className="chat-title">
               <strong>Bot Financeiro</strong>
               <span id="statusText">{statusText}</span>
@@ -934,6 +954,14 @@ export default function App() {
                 <span></span>
                 IA ativa
               </div>
+              <button
+                className="mobile-account-button"
+                type="button"
+                aria-label="Abrir conta"
+                onClick={() => setIsSidebarOpen(true)}
+              >
+                {userInitials}
+              </button>
             </div>
           </header>
 
@@ -961,7 +989,7 @@ export default function App() {
               name="message"
               rows="1"
               maxLength="1200"
-              placeholder="Pergunte sobre investimentos, dívidas, reserva ou organização financeira..."
+              placeholder="Pergunte ao Bot Financeiro"
               autoComplete="off"
               ref={inputRef}
               value={input}

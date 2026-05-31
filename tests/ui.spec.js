@@ -72,7 +72,7 @@ test.describe("UI - App React", () => {
     const textarea = page.locator("#messageInput");
     await expect(textarea).toBeVisible();
     await expect(textarea).toHaveAttribute("maxlength", "1200");
-    await expect(textarea).toHaveAttribute("placeholder", /investimentos|dívidas|reserva/);
+    await expect(textarea).toHaveAttribute("placeholder", "Pergunte ao Bot Financeiro");
     await expect(page.locator("#sendButton")).toHaveAttribute("aria-label", "Enviar mensagem");
     await expect(page.locator("#messages")).toHaveAttribute("aria-live", "polite");
   });
