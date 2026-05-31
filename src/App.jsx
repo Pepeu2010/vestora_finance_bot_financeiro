@@ -900,10 +900,15 @@ export default function App() {
             <button
               id="sendButton"
               type="submit"
+              aria-label="Enviar mensagem"
+              title="Enviar mensagem"
               disabled={isSending}
               onPointerDown={() => setSubmitSource("button")}
             >
-              Enviar
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M12 19V5" />
+                <path d="M5 12l7-7 7 7" />
+              </svg>
             </button>
           </form>
         </section>

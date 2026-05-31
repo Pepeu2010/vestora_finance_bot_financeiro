@@ -836,8 +836,8 @@ button {
   position: relative;
   overflow: hidden;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 112px;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) 52px;
+  gap: 8px;
   width: min(900px, calc(100% - 44px));
   margin: 0 auto 22px;
   padding: 8px;
@@ -853,7 +853,7 @@ button {
 .composer::after {
   content: "";
   position: absolute;
-  inset: auto 136px 21px auto;
+  inset: auto 72px 21px auto;
   width: 16px;
   height: 16px;
   border-radius: 999px;
@@ -896,10 +896,13 @@ button {
 .composer button {
   position: relative;
   isolation: isolate;
+  display: grid;
+  place-items: center;
   overflow: hidden;
+  width: 48px;
   min-height: 48px;
   border: 0;
-  border-radius: 999px;
+  border-radius: 17px;
   background:
     radial-gradient(circle at 18% 18%, rgba(255, 255, 255, 0.32), transparent 28%),
     linear-gradient(135deg, #facc15 0%, var(--warm) 36%, var(--primary) 100%);
@@ -910,6 +913,16 @@ button {
     0 14px 34px rgba(245, 158, 11, 0.2),
     0 0 0 1px rgba(255, 255, 255, 0.12) inset;
   transition: transform 180ms ease, filter 180ms ease, box-shadow 180ms ease;
+}
+
+.composer button svg {
+  width: 24px;
+  height: 24px;
+  stroke: currentColor;
+  stroke-width: 2.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
 }
 
 .composer button::before {
