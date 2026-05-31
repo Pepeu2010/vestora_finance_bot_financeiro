@@ -11,6 +11,7 @@ Thumbs.db
 
 # Deploy local
 .vercel/
+dist/
 
 # Playwright
 test-results/

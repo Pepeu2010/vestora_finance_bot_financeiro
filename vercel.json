@@ -1,5 +1,14 @@
 {
   "version": 2,
+  "buildCommand": "npm run build",
+  "functions": {
+    "server.js": {
+      "includeFiles": [
+        "dist/**",
+        "public/**"
+      ]
+    }
+  },
   "builds": [
     {
       "src": "server.js",

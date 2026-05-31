@@ -1,6 +1,6 @@
 # Bot Financeiro
 
-Chatbot web/PWA de educacao financeira com Node.js, Groq e historico de conversas.
+Chatbot web/PWA de educacao financeira e mercado imobiliario com React, Node.js, Groq e historico de conversas.
 
 ## Rodar localmente
 
@@ -14,6 +14,22 @@ Acesse:
 ```text
 http://localhost:3005
 ```
+
+O `npm start` compila a interface React automaticamente antes de iniciar o servidor.
+
+Para trabalhar apenas na interface com hot reload:
+
+```bash
+npm run dev:react
+```
+
+Nesse modo, deixe o backend rodando separadamente em outra porta se precisar testar as APIs.
+
+## Deploy na Vercel
+
+O projeto esta preparado para Vercel. No deploy, a Vercel executa `npm run build`, gera a pasta `dist/` e o Express entrega a interface React junto das rotas `/api`.
+
+Configure as variaveis de ambiente do `.env.example` no painel da Vercel.
 
 ## Configurar Groq
 

@@ -4,8 +4,11 @@
   "description": "Chatbot web/PWA de educacao financeira com Node.js e Groq.",
   "main": "server.js",
   "scripts": {
+    "build": "vite build",
+    "prestart": "npm run build",
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "npm run build && node server.js",
+    "dev:react": "vite --host 0.0.0.0 --port 3005"
   },
   "keywords": [
     "chatbot",
@@ -18,14 +21,19 @@
   "license": "MIT",
   "dependencies": {
     "@supabase/supabase-js": "^2.106.2",
+    "@vercel/analytics": "^2.0.1",
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "express-rate-limit": "^8.5.2",
-    "helmet": "^8.2.0"
+    "helmet": "^8.2.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
   },
   "devDependencies": {
-    "@playwright/test": "^1.60.0"
+    "@playwright/test": "^1.60.0",
+    "@vitejs/plugin-react": "^6.0.2",
+    "vite": "^8.0.14"
   }
 }

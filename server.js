@@ -6,6 +6,7 @@ const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const bcrypt = require("bcryptjs");
 const cookieParser = require("cookie-parser");
+const fs = require("fs");
 const path = require("path");
 const { askGroq } = require("./groq");
 const { supabase, isSupabaseConfigured } = require("./supabase");
@@ -92,9 +93,19 @@ app.use((req, res, next) => {
 });
 
 app.use("/api/", apiLimiter);
-app.use(express.static(path.join(__dirname, "public"), {
+const publicPath = path.join(__dirname, "public");
+const distPath = path.join(__dirname, "dist");
+
+app.use(express.static(distPath, {
   dotfiles: "ignore",
   etag: true,
+  maxAge: "1h"
+}));
+
+app.use(express.static(publicPath, {
+  dotfiles: "ignore",
+  etag: true,
+  index: false,
   maxAge: "1h"
 }));
 
@@ -832,7 +843,14 @@ app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
 });
 
 app.use((req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
+  const distIndex = path.join(distPath, "index.html");
+
+  if (fs.existsSync(distIndex)) {
+    res.sendFile(distIndex);
+    return;
+  }
+
+  res.status(500).send("Interface nao compilada. Execute npm run build antes de iniciar.");
 });
 
 if (require.main === module) {

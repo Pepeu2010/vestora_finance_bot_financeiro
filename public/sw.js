@@ -1,9 +1,6 @@
-const CACHE_NAME = "bot-financeiro-v33";
+const CACHE_NAME = "bot-financeiro-v34";
 const ASSETS = [
   "/",
-  "/index.html",
-  "/style.css",
-  "/app.js",
   "/manifest.json",
   "/icon.svg",
   "/favicon.svg"
