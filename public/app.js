@@ -7,7 +7,6 @@ const newChatButton = document.querySelector("#newChatButton");
 const promptButtons = document.querySelectorAll("[data-prompt]");
 const conversationListEl = document.querySelector("#conversationList");
 const storageStatusEl = document.querySelector("#storageStatus");
-const syncButton = document.querySelector("#syncButton");
 const authScreen = document.querySelector("#authScreen");
 const authForm = document.querySelector("#authForm");
 const authName = document.querySelector("#authName");
@@ -431,10 +430,6 @@ async function loadCloudConversations() {
   }
 }
 
-async function syncDeviceHistory() {
-  await loadCloudConversations();
-}
-
 async function loadCloudMessages(conversationId) {
   if (!cloudEnabled) return null;
 
@@ -618,8 +613,6 @@ promptButtons.forEach((button) => {
   });
 });
 
-syncButton.addEventListener("click", syncDeviceHistory);
-
 authToggle.addEventListener("click", () => {
   setAuthMode(!isRegisterMode);
 });
@@ -677,6 +670,18 @@ logoutButton.addEventListener("click", async () => {
   renderConversationList();
   renderMessages();
   showAuth();
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && currentUser) {
+    loadCloudConversations();
+  }
+});
+
+window.addEventListener("focus", () => {
+  if (currentUser) {
+    loadCloudConversations();
+  }
 });
 
 if ("serviceWorker" in navigator) {
