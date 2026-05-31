@@ -790,7 +790,12 @@ export default function App() {
           </div>
 
           <button className="new-chat" id="newChatButton" type="button" onClick={handleNewChat}>
-            <span aria-hidden="true">+</span>
+            <span aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path d="M12 5v14" />
+                <path d="M5 12h14" />
+              </svg>
+            </span>
             Novo chat
           </button>
 

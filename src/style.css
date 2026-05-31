@@ -514,13 +514,21 @@ button {
 .new-chat span {
   display: grid;
   place-items: center;
+  flex: 0 0 auto;
   width: 22px;
   height: 22px;
   border-radius: 8px;
   background: linear-gradient(135deg, var(--primary), var(--primary-2));
   color: #03100c;
-  font-size: 18px;
-  line-height: 1;
+}
+
+.new-chat span svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  stroke-width: 3;
+  stroke-linecap: round;
+  fill: none;
 }
 
 .chat-panel {
