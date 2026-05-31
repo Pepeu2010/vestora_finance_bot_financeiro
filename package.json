@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "build": "vite build",
+    "vercel-build": "vite build",
     "prestart": "npm run build",
     "start": "node server.js",
     "dev": "npm run build && node server.js",
