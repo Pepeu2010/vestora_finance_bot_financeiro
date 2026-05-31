@@ -9,7 +9,7 @@ if (!apiKey || apiKey === "COLE_SUA_CHAVE_GROQ_AQUI") {
   console.warn("[Groq] Configure GROQ_API_KEY no arquivo .env antes de usar respostas reais.");
 }
 
-function formatMessages({ message, history, profileSummary }) {
+function formatMessages({ message, history, profileSummary, officialFacts }) {
   const messages = [
     {
       role: "system",
@@ -21,6 +21,7 @@ Regra adicional obrigatoria:
 - Se pedirem esse tipo de informacao, recuse brevemente e volte ao tema de educacao financeira.
 - Se a pergunta envolver dados que mudam com frequencia, como programa habitacional, taxa, faixa de renda, imposto, Selic, CDI, regra de financiamento ou valor de subsidio, nao chute. Informe a incerteza, use apenas dados que recebeu no prompt e recomende confirmar na fonte oficial.
 - Se perceber que uma informacao pode estar desatualizada, diga isso claramente em vez de responder com certeza.
+- Se receber "Dados oficiais verificados", use esses dados acima da memoria e acima do seu conhecimento geral. Nao contradiga esses dados.
 - Para economizar tokens, responda de forma objetiva: normalmente 4 a 8 frases ou ate 5 bullets curtos.
 - So escreva respostas longas quando o usuario pedir detalhes, comparacao completa, plano passo a passo ou tabela.
 - Evite repetir avisos longos; cite riscos de forma curta e clara.
@@ -32,6 +33,13 @@ Regra adicional obrigatoria:
     messages.push({
       role: "system",
       content: `Perfil resumido do usuario para contexto, sem repetir automaticamente: ${profileSummary}`
+    });
+  }
+
+  if (officialFacts) {
+    messages.push({
+      role: "system",
+      content: `Dados oficiais verificados para esta pergunta:\n${JSON.stringify(officialFacts, null, 2)}`
     });
   }
 
@@ -57,7 +65,7 @@ function cleanModelAnswer(text) {
     .trim();
 }
 
-async function askGroq({ message, history, profileSummary }) {
+async function askGroq({ message, history, profileSummary, officialFacts }) {
   if (!apiKey || apiKey === "COLE_SUA_CHAVE_GROQ_AQUI") {
     return "A chave da Groq ainda nao foi configurada. Edite o arquivo .env, insira sua GROQ_API_KEY e reinicie o servidor.";
   }
@@ -70,7 +78,7 @@ async function askGroq({ message, history, profileSummary }) {
     },
     body: JSON.stringify({
       model,
-      messages: formatMessages({ message, history, profileSummary }),
+      messages: formatMessages({ message, history, profileSummary, officialFacts }),
       temperature: 0.2,
       max_tokens: maxTokens
     })

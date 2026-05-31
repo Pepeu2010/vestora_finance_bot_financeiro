@@ -202,6 +202,7 @@ test.describe("API - Respostas controladas", () => {
     expect(response.ok()).toBeTruthy();
 
     const body = await response.json();
+    expect(body.answer).toContain("fontes oficiais");
     expect(body.answer).toContain("R$ 13.000");
     expect(body.answer).toContain("Faixa 4");
     expect(body.answer).not.toContain("R$ 12.000");

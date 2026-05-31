@@ -9,6 +9,7 @@ const cookieParser = require("cookie-parser");
 const fs = require("fs");
 const path = require("path");
 const { askGroq } = require("./groq");
+const { getOfficialFactsForMessage } = require("./officialFacts");
 const { supabase, isSupabaseConfigured } = require("./supabase");
 
 const app = express();
@@ -341,7 +342,7 @@ function getProfileSummary(session) {
   return parts.join("; ").slice(0, 360);
 }
 
-function tryQuickCalculator(text, session) {
+function tryQuickCalculator(text, session, officialFacts) {
   const normalized = normalizeText(text);
   const values = parseMoneyValues(text);
   const profile = session.profile || {};
@@ -351,7 +352,11 @@ function tryQuickCalculator(text, session) {
     normalized.includes("mcmv") ||
     normalized.includes("casa verde amarela")
   ) {
-    return "Sobre o **Minha Casa, Minha Vida**, a regra pode mudar por portaria. Pela referencia oficial mais recente que deixei cadastrada no bot, familias em area urbana podem entrar no programa com renda bruta familiar mensal de ate **R$ 13.000**.\n\nFaixas urbanas atuais: **Faixa 1 ate R$ 3.200**, **Faixa 2 de R$ 3.200,01 a R$ 5.000**, **Faixa 3 de R$ 5.000,01 a R$ 9.600** e **Faixa 4 ate R$ 13.000**. Para a Faixa 4, o MCMV Classe Media tem regras especificas, como imovel de ate R$ 600 mil e taxa nominal informada pelo governo/CAIXA.\n\nProximo passo: confirme sua renda familiar bruta, cidade, valor do imovel e entrada disponivel para avaliar enquadramento. Antes de fechar contrato, valide no simulador da CAIXA ou em uma agencia, porque taxas, subsidio e aprovacao dependem do perfil e da data.";
+    const checked = officialFacts?.verified
+      ? "Conferi fontes oficiais antes de responder."
+      : "Nao consegui confirmar online agora, entao use isto como referencia e valide na CAIXA/Ministerio das Cidades.";
+
+    return `${checked}\n\nSobre o **Minha Casa, Minha Vida**, familias em area urbana podem entrar no programa com renda bruta familiar mensal de ate **R$ 13.000**.\n\nFaixas urbanas atuais: **Faixa 1 ate R$ 3.200**, **Faixa 2 de R$ 3.200,01 a R$ 5.000**, **Faixa 3 de R$ 5.000,01 a R$ 9.600** e **Faixa 4 ate R$ 13.000**. Para a Faixa 4, o MCMV Classe Media tem regras especificas, como imovel de ate R$ 600 mil.\n\nProximo passo: confirme sua renda familiar bruta, cidade, valor do imovel e entrada disponivel. Antes de fechar contrato, valide no simulador da CAIXA ou em uma agencia, porque taxas, subsidio e aprovacao dependem do perfil e da data.`;
   }
 
   if (normalized.includes("reserva") && (values[0] || profile.gastos)) {
@@ -793,6 +798,11 @@ app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
       ? cloudHistory.slice(-MAX_HISTORY_MESSAGES)
       : session.history.slice(-MAX_HISTORY_MESSAGES);
 
+    const officialFacts = await getOfficialFactsForMessage(userMessage).catch((error) => {
+      console.warn(`[${now()}] [${session.id}] Nao consegui buscar fonte oficial:`, error.message);
+      return null;
+    });
+
     await saveCloudMessage({
       conversationId,
       role: "user",
@@ -818,7 +828,7 @@ app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
       });
     }
 
-    const quickAnswer = tryQuickCalculator(userMessage, session);
+    const quickAnswer = tryQuickCalculator(userMessage, session, officialFacts);
     if (quickAnswer) {
       addToHistory(session, "user", userMessage);
       addToHistory(session, "model", quickAnswer);
@@ -841,7 +851,8 @@ app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
     const answer = await askGroq({
       message: userMessage,
       history: historyForGroq,
-      profileSummary: getProfileSummary(session)
+      profileSummary: getProfileSummary(session),
+      officialFacts
     });
 
     addToHistory(session, "user", userMessage);
