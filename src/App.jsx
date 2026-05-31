@@ -5,7 +5,6 @@ import { SpeedInsights } from "@vercel/speed-insights/react";
 const DEVICE_KEY = "bot-financeiro-device-id";
 const CONVERSATIONS_KEY = "bot-financeiro-conversations";
 const CURRENT_CONVERSATION_KEY = "bot-financeiro-current-conversation";
-const WEB_SEARCH_KEY = "bot-financeiro-web-search";
 const AUTH_TRANSITION_MS = 420;
 
 const QUICK_PROMPTS = [
@@ -45,10 +44,6 @@ function loadLocalConversations() {
 
 function saveLocalConversations(conversations) {
   localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(conversations));
-}
-
-function loadWebSearchPreference() {
-  return localStorage.getItem(WEB_SEARCH_KEY) === "true";
 }
 
 function getOrCreateDeviceId() {
@@ -256,7 +251,6 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authForm, setAuthForm] = useState({ name: "", email: "", password: "" });
   const [composerBurst, setComposerBurst] = useState("");
-  const [webSearchEnabled, setWebSearchEnabled] = useState(loadWebSearchPreference);
 
   const messagesRef = useRef(null);
   const inputRef = useRef(null);
@@ -272,14 +266,6 @@ export default function App() {
   function persistConversations(nextConversations) {
     setConversations(nextConversations);
     saveLocalConversations(nextConversations);
-  }
-
-  function toggleWebSearch() {
-    setWebSearchEnabled((enabled) => {
-      const next = !enabled;
-      localStorage.setItem(WEB_SEARCH_KEY, String(next));
-      return next;
-    });
   }
 
   function showAuth() {
@@ -522,7 +508,7 @@ export default function App() {
     });
 
     setIsSending(true);
-    setStatusText(webSearchEnabled ? "Pesquisando fontes..." : "Digitando...");
+    setStatusText("Pesquisando fontes...");
 
     const typingId = crypto.randomUUID();
     appendMessageToConversation(activeConversationId, {
@@ -540,8 +526,7 @@ export default function App() {
         body: JSON.stringify({
           conversationId: activeConversationId,
           sessionId: activeConversationId || deviceId,
-          message: text,
-          webSearchEnabled
+          message: text
         })
       });
 
@@ -872,16 +857,6 @@ export default function App() {
               <span></span>
               IA ativa
             </div>
-            <button
-              className={`web-search-toggle${webSearchEnabled ? " active" : ""}`}
-              type="button"
-              onClick={toggleWebSearch}
-              aria-pressed={webSearchEnabled}
-              title="Pesquisar em fontes oficiais antes de responder"
-            >
-              <span></span>
-              Internet
-            </button>
             <button className="logout-button" id="logoutButton" type="button" onClick={handleLogout}>
               Sair
             </button>

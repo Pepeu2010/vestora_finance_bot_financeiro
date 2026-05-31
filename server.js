@@ -784,7 +784,6 @@ app.delete("/api/conversations/:id", requireAuth, async (req, res) => {
 app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
   const userMessage = sanitizeMessage(req.body.message);
   const conversationIdFromRequest = isUuid(req.body.conversationId) ? req.body.conversationId : "";
-  const webSearchEnabled = req.body.webSearchEnabled !== false;
   const session = getSession(req.body.sessionId || conversationIdFromRequest);
 
   if (!userMessage) {
@@ -821,7 +820,7 @@ app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
       : session.history.slice(-MAX_HISTORY_MESSAGES);
 
     const officialFacts = await getOfficialFactsForMessage(userMessage, {
-      online: webSearchEnabled
+      online: true
     }).catch((error) => {
       console.warn(`[${now()}] [${session.id}] Nao consegui buscar fonte oficial:`, error.message);
       return null;
