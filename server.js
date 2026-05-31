@@ -860,6 +860,12 @@ app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
         : Promise.resolve(null)
     ]);
 
+    if (internetResults?.searched) {
+      console.log(
+        `[${now()}] [${session.id}] Pesquisa online: ${internetResults.engine}, ${internetResults.results?.length || 0} resultado(s).`
+      );
+    }
+
     const quickAnswer = tryQuickCalculator(userMessage, session, officialFacts);
     if (quickAnswer) {
       addToHistory(session, "user", userMessage);
