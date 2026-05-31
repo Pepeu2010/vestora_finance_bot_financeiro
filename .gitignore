@@ -1,10 +1,22 @@
 node_modules/
 .env
 npm-debug.log*
+*.log
+
+# IDE / sistema
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Deploy local
+.vercel/
 
 # Playwright
 test-results/
 playwright-report/
+coverage/
 
 # Acidental
+tests/api
 tests/api/
