@@ -346,6 +346,14 @@ function tryQuickCalculator(text, session) {
   const values = parseMoneyValues(text);
   const profile = session.profile || {};
 
+  if (
+    normalized.includes("minha casa minha vida") ||
+    normalized.includes("mcmv") ||
+    normalized.includes("casa verde amarela")
+  ) {
+    return "Sobre o **Minha Casa, Minha Vida**, a regra pode mudar por portaria. Pela referencia oficial mais recente que deixei cadastrada no bot, familias em area urbana podem entrar no programa com renda bruta familiar mensal de ate **R$ 13.000**.\n\nFaixas urbanas atuais: **Faixa 1 ate R$ 3.200**, **Faixa 2 de R$ 3.200,01 a R$ 5.000**, **Faixa 3 de R$ 5.000,01 a R$ 9.600** e **Faixa 4 ate R$ 13.000**. Para a Faixa 4, o MCMV Classe Media tem regras especificas, como imovel de ate R$ 600 mil e taxa nominal informada pelo governo/CAIXA.\n\nProximo passo: confirme sua renda familiar bruta, cidade, valor do imovel e entrada disponivel para avaliar enquadramento. Antes de fechar contrato, valide no simulador da CAIXA ou em uma agencia, porque taxas, subsidio e aprovacao dependem do perfil e da data.";
+  }
+
   if (normalized.includes("reserva") && (values[0] || profile.gastos)) {
     const monthlyCost = values[0] || profile.gastos;
     const min = monthlyCost * 6;

@@ -190,6 +190,24 @@ test.describe("API - Conversas autenticadas", () => {
   });
 });
 
+test.describe("API - Respostas controladas", () => {
+  test("Minha Casa Minha Vida usa referencia atual e nao limite antigo", async ({ request }) => {
+    await registerTestUser(request);
+
+    const response = await request.post("/api/chat", {
+      data: { message: "Minha Casa Minha Vida" }
+    });
+
+    if (response.status() === 429) return;
+    expect(response.ok()).toBeTruthy();
+
+    const body = await response.json();
+    expect(body.answer).toContain("R$ 13.000");
+    expect(body.answer).toContain("Faixa 4");
+    expect(body.answer).not.toContain("R$ 12.000");
+  });
+});
+
 test.describe("API - Headers", () => {
   test("habilita headers de seguranca", async ({ request }) => {
     const response = await request.get("/api/health");
