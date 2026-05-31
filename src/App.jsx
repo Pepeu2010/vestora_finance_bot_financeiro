@@ -59,6 +59,23 @@ function formatText(text) {
   return String(text || "").trim();
 }
 
+function getDisplayName(user) {
+  return user?.name || user?.email?.split("@")[0] || "Usuário";
+}
+
+function getInitials(name) {
+  const parts = String(name || "Usuário")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  return parts
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+}
+
 function makeTitle(text) {
   const clean = String(text || "").replace(/\s+/g, " ").trim();
   const normalized = clean
@@ -263,6 +280,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authForm, setAuthForm] = useState({ name: "", email: "", password: "" });
   const [composerBurst, setComposerBurst] = useState("");
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
 
   const messagesRef = useRef(null);
   const inputRef = useRef(null);
@@ -274,6 +292,9 @@ export default function App() {
   );
 
   const messages = currentConversation?.messages || [];
+  const displayName = getDisplayName(currentUser);
+  const userEmail = currentUser?.email || "Conta conectada";
+  const userInitials = getInitials(displayName);
 
   function persistConversations(nextConversations) {
     setConversations(nextConversations);
@@ -632,6 +653,7 @@ export default function App() {
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+    setAccountMenuOpen(false);
     setCurrentUser(null);
     setCurrentConversationId("");
     localStorage.removeItem(CURRENT_CONVERSATION_KEY);
@@ -644,6 +666,12 @@ export default function App() {
     localStorage.removeItem(CURRENT_CONVERSATION_KEY);
     setStatusText("Online");
     inputRef.current?.focus();
+  }
+
+  function handleAccountInfo(label) {
+    setAccountMenuOpen(false);
+    setStatusText(label);
+    window.setTimeout(() => setStatusText("Online"), 1500);
   }
 
   useEffect(() => {
@@ -799,16 +827,6 @@ export default function App() {
             Novo chat
           </button>
 
-          <section className="insight-panel sidebar-focus" aria-label="Visao financeira">
-            <div>
-              <span>Foco atual</span>
-              <strong>Clareza financeira</strong>
-            </div>
-            <div className="meter" aria-hidden="true">
-              <span></span>
-            </div>
-          </section>
-
           <section className="history-panel" aria-label="Histórico de conversas">
             <div className="history-head">
               <span>Recentes</span>
@@ -845,6 +863,64 @@ export default function App() {
             </div>
           </section>
 
+          <div className="account-area">
+            {accountMenuOpen && (
+              <div className="account-menu" role="menu" aria-label="Menu da conta">
+                <div className="account-menu-head">
+                  <span className="account-avatar large" aria-hidden="true">
+                    {userInitials}
+                  </span>
+                  <div>
+                    <strong>{displayName}</strong>
+                    <small>{userEmail}</small>
+                  </div>
+                </div>
+
+                <button type="button" role="menuitem" onClick={() => handleAccountInfo("Perfil aberto")}>
+                  <span aria-hidden="true">◎</span>
+                  Perfil
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => handleAccountInfo("Personalização aberta")}
+                >
+                  <span aria-hidden="true">✦</span>
+                  Personalização
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => handleAccountInfo("Configurações abertas")}
+                >
+                  <span aria-hidden="true">⚙</span>
+                  Configurações
+                </button>
+                <button className="danger" type="button" role="menuitem" onClick={handleLogout}>
+                  <span aria-hidden="true">↪</span>
+                  Sair
+                </button>
+              </div>
+            )}
+
+            <button
+              className="account-button"
+              type="button"
+              aria-label="Abrir menu da conta"
+              aria-expanded={accountMenuOpen}
+              onClick={() => setAccountMenuOpen((open) => !open)}
+            >
+              <span className="account-avatar" aria-hidden="true">
+                {userInitials}
+              </span>
+              <span className="account-name">
+                <strong>{displayName}</strong>
+                <small>{userEmail}</small>
+              </span>
+              <span className="account-chevron" aria-hidden="true">›</span>
+            </button>
+          </div>
+
         </aside>
 
         <section className="chat-panel" aria-label="Conversa com o Bot Financeiro">
@@ -858,9 +934,6 @@ export default function App() {
                 <span></span>
                 IA ativa
               </div>
-              <button className="logout-button" id="logoutButton" type="button" onClick={handleLogout}>
-                Sair
-              </button>
             </div>
           </header>
 
