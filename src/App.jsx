@@ -461,9 +461,18 @@ export default function App() {
 
   async function deleteConversation(conversationId) {
     if (cloudEnabled) {
-      await fetch(`/api/conversations/${conversationId}`, {
-        method: "DELETE"
-      }).catch(() => {});
+      try {
+        const response = await fetch(`/api/conversations/${conversationId}`, {
+          method: "DELETE"
+        });
+
+        if (!response.ok) {
+          throw new Error("Delete failed");
+        }
+      } catch {
+        setStatusText("Não consegui apagar a conversa.");
+        return;
+      }
     }
 
     const nextConversations = conversations.filter(
