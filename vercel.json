@@ -4,10 +4,7 @@
   "outputDirectory": "dist",
   "functions": {
     "api/index.js": {
-      "includeFiles": [
-        "dist/**",
-        "public/**"
-      ]
+      "includeFiles": "{dist/**,public/**}"
     }
   },
   "rewrites": [
