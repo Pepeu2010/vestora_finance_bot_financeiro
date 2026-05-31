@@ -13,7 +13,7 @@ const { supabase, isSupabaseConfigured } = require("./supabase");
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const APP_NAME = process.env.APP_NAME || "Bot Financeiro";
-const MAX_HISTORY_MESSAGES = 16;
+const MAX_HISTORY_MESSAGES = Number(process.env.MAX_HISTORY_MESSAGES || 8);
 const MAX_MESSAGE_LENGTH = 1200;
 const SESSION_COOKIE_NAME = "bot_financeiro_session";
 const SESSION_SECRET = process.env.APP_SESSION_SECRET || "dev-only-change-this-secret";
@@ -222,8 +222,32 @@ function makeTitle(text) {
     .replace(/[<>]/g, "")
     .trim();
 
+  const normalized = normalizeText(clean);
+  const titleRules = [
+    { test: ["financiamento", "financiar", "parcela"], title: "Financiamento de imóvel" },
+    { test: ["comprar", "compra", "imovel", "apartamento", "casa"], title: "Compra de imóvel" },
+    { test: ["vender", "venda", "anuncio", "preco"], title: "Venda de imóvel" },
+    { test: ["alugar", "aluguel", "locacao"], title: "Aluguel de imóvel" },
+    { test: ["reserva", "emergencia"], title: "Reserva de emergência" },
+    { test: ["divida", "dividas", "vermelho"], title: "Organização de dívidas" },
+    { test: ["investir", "investimento", "acoes", "fii", "renda fixa"], title: "Plano de investimentos" },
+    { test: ["comprar ou alugar", "alugar ou comprar"], title: "Comprar ou alugar" }
+  ];
+
+  const matched = titleRules.find((rule) =>
+    rule.test.some((term) => normalized.includes(term))
+  );
+
+  if (matched) return matched.title;
   if (!clean) return "Nova conversa";
   return clean.length > 48 ? `${clean.slice(0, 48)}...` : clean;
+}
+
+function normalizeText(text) {
+  return String(text || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
 }
 
 function sanitizeMessage(text) {
@@ -237,6 +261,115 @@ function sanitizeMessage(text) {
 function previewForLog(text) {
   const clean = String(text || "").replace(/\s+/g, " ").trim();
   return clean.length > 80 ? `${clean.slice(0, 80)}...` : clean;
+}
+
+function parseMoneyValues(text) {
+  const values = [];
+  const regex = /(?:r\$\s*)?(\d+(?:\.\d{3})*)(?:,(\d{1,2}))?\s*(mil|k)?/gi;
+  let match;
+
+  while ((match = regex.exec(text))) {
+    let value = Number(String(match[1]).replace(/\./g, ""));
+    if (match[2]) value += Number(`0.${match[2].padEnd(2, "0")}`);
+    if (match[3]) value *= 1000;
+    if (Number.isFinite(value) && value > 0) values.push(value);
+  }
+
+  return values;
+}
+
+function formatCurrency(value) {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    maximumFractionDigits: 0
+  }).format(value);
+}
+
+function updateProfileFromMessage(session, text) {
+  const normalized = normalizeText(text);
+  const values = parseMoneyValues(text);
+  session.profile = session.profile || {};
+
+  const setFirstValue = (key, terms) => {
+    if (terms.some((term) => normalized.includes(term)) && values[0]) {
+      session.profile[key] = values[0];
+    }
+  };
+
+  setFirstValue("renda", ["renda", "ganho", "salario", "recebo"]);
+  setFirstValue("gastos", ["gasto", "gastos", "despesa", "despesas", "custo mensal"]);
+  setFirstValue("dividas", ["divida", "dividas", "devo", "financiamento atrasado"]);
+  setFirstValue("entrada", ["entrada"]);
+  setFirstValue("valorImovel", ["valor do imovel", "imovel de", "casa de", "apartamento de"]);
+
+  const objectiveMatch = text.match(/(?:objetivo|quero|pretendo)\s+(?:e|é|eh|:)?\s*([^.,\n]{4,80})/i);
+  if (objectiveMatch) session.profile.objetivo = objectiveMatch[1].trim();
+
+  const prazoMatch = text.match(/(\d{1,2})\s*(meses|anos|ano|mes)/i);
+  if (prazoMatch) session.profile.prazo = `${prazoMatch[1]} ${prazoMatch[2]}`;
+
+  if (normalized.includes("conservador")) session.profile.perfil = "conservador";
+  if (normalized.includes("moderado")) session.profile.perfil = "moderado";
+  if (normalized.includes("arrojado") || normalized.includes("agressivo")) session.profile.perfil = "arrojado";
+}
+
+function getProfileSummary(session) {
+  const profile = session.profile || {};
+  const parts = [];
+
+  if (profile.renda) parts.push(`renda ${formatCurrency(profile.renda)}`);
+  if (profile.gastos) parts.push(`gastos ${formatCurrency(profile.gastos)}`);
+  if (profile.dividas) parts.push(`dividas ${formatCurrency(profile.dividas)}`);
+  if (profile.entrada) parts.push(`entrada ${formatCurrency(profile.entrada)}`);
+  if (profile.valorImovel) parts.push(`imovel ${formatCurrency(profile.valorImovel)}`);
+  if (profile.objetivo) parts.push(`objetivo ${profile.objetivo}`);
+  if (profile.prazo) parts.push(`prazo ${profile.prazo}`);
+  if (profile.perfil) parts.push(`perfil ${profile.perfil}`);
+
+  return parts.join("; ").slice(0, 360);
+}
+
+function tryQuickCalculator(text, session) {
+  const normalized = normalizeText(text);
+  const values = parseMoneyValues(text);
+  const profile = session.profile || {};
+
+  if (normalized.includes("reserva") && (values[0] || profile.gastos)) {
+    const monthlyCost = values[0] || profile.gastos;
+    const min = monthlyCost * 6;
+    const max = monthlyCost * 12;
+    return `Para uma reserva de emergência, uma faixa prática seria entre **${formatCurrency(min)} e ${formatCurrency(max)}**.\n\nIsso considera 6 a 12 meses dos seus gastos mensais (${formatCurrency(monthlyCost)}). Próximo passo: separe esse dinheiro em algo líquido e conservador, como Tesouro Selic, CDB com liquidez diária ou conta remunerada segura.`;
+  }
+
+  if ((normalized.includes("parcela") || normalized.includes("financiamento")) && (profile.renda || values.length)) {
+    const income = profile.renda || values.find((value) => value <= 100000);
+    if (income) {
+      const conservative = income * 0.25;
+      const limit = income * 0.3;
+      return `Como referência, uma parcela imobiliária mais prudente ficaria perto de **${formatCurrency(conservative)}** e o limite comum de 30% da renda seria **${formatCurrency(limit)}**.\n\nAtenção: financiamento envolve juros, seguros, CET e prazo longo. Próximo passo: compare a parcela com seus gastos fixos e mantenha uma reserva antes de assumir o contrato.`;
+    }
+  }
+
+  if ((normalized.includes("comprometimento") || normalized.includes("renda comprometida")) && values.length >= 2) {
+    const [payment, income] = values[0] > values[1] ? [values[1], values[0]] : [values[0], values[1]];
+    const percentage = (payment / income) * 100;
+    return `Essa parcela compromete aproximadamente **${percentage.toFixed(1).replace(".", ",")}%** da renda.\n\nRegra prática: até 30% costuma ser mais aceitável; acima disso exige muito cuidado. Próximo passo: simule também condomínio, IPTU, seguros e manutenção.`;
+  }
+
+  if ((normalized.includes("rentabilidade") || normalized.includes("render")) && values.length >= 2) {
+    const amount = values[0];
+    const rate = values[1] > 1 ? values[1] / 100 : values[1];
+    const monthly = amount * rate;
+    const yearly = amount * (Math.pow(1 + rate, 12) - 1);
+    return `Com **${formatCurrency(amount)}** rendendo **${(rate * 100).toFixed(2).replace(".", ",")}% ao mês**, o rendimento aproximado seria **${formatCurrency(monthly)} por mês** e **${formatCurrency(yearly)} em 12 meses**, antes de impostos.\n\nAtenção: rentabilidade pode variar e impostos/liquidez mudam o resultado final.`;
+  }
+
+  if (normalized.includes("comprar ou alugar") || normalized.includes("alugar ou comprar")) {
+    return "Para comparar comprar ou alugar, me envie 5 dados: valor do imóvel, aluguel mensal, entrada disponível, renda mensal e prazo que pretende ficar no imóvel. Com isso eu monto uma análise curta de custo, risco e flexibilidade.";
+  }
+
+  return "";
 }
 
 function isSensitiveSystemRequest(text) {
@@ -603,6 +736,7 @@ app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
   }
 
   console.log(`[${now()}] [${session.id}] Usuario: ${previewForLog(userMessage)}`);
+  updateProfileFromMessage(session, userMessage);
 
   try {
     const conversationId = await ensureConversation({
@@ -645,9 +779,30 @@ app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
       });
     }
 
+    const quickAnswer = tryQuickCalculator(userMessage, session);
+    if (quickAnswer) {
+      addToHistory(session, "user", userMessage);
+      addToHistory(session, "model", quickAnswer);
+
+      await saveCloudMessage({
+        conversationId,
+        role: "model",
+        content: quickAnswer
+      });
+
+      console.log(`[${now()}] [${session.id}] Resposta por calculadora simples.`);
+
+      return res.json({
+        sessionId: session.id,
+        conversationId,
+        answer: quickAnswer
+      });
+    }
+
     const answer = await askGroq({
       message: userMessage,
-      history: historyForGroq
+      history: historyForGroq,
+      profileSummary: getProfileSummary(session)
     });
 
     addToHistory(session, "user", userMessage);
@@ -680,6 +835,10 @@ app.use((req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-app.listen(PORT, () => {
-  console.log(`[${now()}] ${APP_NAME} rodando em http://localhost:${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`[${now()}] ${APP_NAME} rodando em http://localhost:${PORT}`);
+  });
+}
+
+module.exports = app;

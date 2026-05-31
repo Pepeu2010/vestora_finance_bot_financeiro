@@ -123,6 +123,26 @@ function getCurrentMessages() {
 
 function makeTitle(text) {
   const clean = String(text || "").replace(/\s+/g, " ").trim();
+  const normalized = clean
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  const titleRules = [
+    { terms: ["financiamento", "financiar", "parcela"], title: "Financiamento de imóvel" },
+    { terms: ["comprar", "compra", "imovel", "apartamento", "casa"], title: "Compra de imóvel" },
+    { terms: ["vender", "venda", "anuncio", "preco"], title: "Venda de imóvel" },
+    { terms: ["alugar", "aluguel", "locacao"], title: "Aluguel de imóvel" },
+    { terms: ["reserva", "emergencia"], title: "Reserva de emergência" },
+    { terms: ["divida", "dividas", "vermelho"], title: "Organização de dívidas" },
+    { terms: ["investir", "investimento", "acoes", "fii", "renda fixa"], title: "Plano de investimentos" }
+  ];
+
+  const matched = titleRules.find((rule) =>
+    rule.terms.some((term) => normalized.includes(term))
+  );
+
+  if (matched) return matched.title;
   if (!clean) return "Nova conversa";
   return clean.length > 44 ? `${clean.slice(0, 44)}...` : clean;
 }
