@@ -214,9 +214,346 @@ body.theme-light {
 body.theme-light {
   color-scheme: light;
   background:
-    radial-gradient(circle at 8% 12%, rgba(34, 197, 94, 0.12), transparent 28%),
-    radial-gradient(circle at 92% 18%, rgba(245, 158, 11, 0.08), transparent 24%),
-    linear-gradient(135deg, #f6f7f4 0%, #eef1ec 45%, #e6eae3 100%) !important;
+    radial-gradient(circle at 8% 12%, rgba(34, 197, 94, 0.08), transparent 28%),
+    radial-gradient(circle at 92% 18%, rgba(245, 158, 11, 0.06), transparent 24%),
+    linear-gradient(135deg, #f8faf9 0%, #f0f4f2 45%, #e8ede9 100%) !important;
+}
+
+body.theme-light .ambient {
+  display: none;
+}
+
+body.theme-light .live-pill {
+  background: rgba(22, 163, 74, 0.1);
+  border-color: rgba(22, 163, 74, 0.3);
+  color: #166534;
+}
+
+body.theme-light .live-pill span {
+  box-shadow: 0 0 12px #16a34a;
+}
+
+body.theme-light .messages {
+  color: #1a1a1a;
+}
+
+body.theme-light .message.user {
+  background: linear-gradient(135deg, #16a34a, #0d9488);
+  color: white;
+  box-shadow: 0 4px 20px rgba(22, 163, 74, 0.3);
+}
+
+body.theme-light .message.bot {
+  background: rgba(0, 0, 0, 0.06);
+  color: #1a1a1a;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+body.theme-light .message.bot.has-error {
+  border-left-color: #dc2626;
+  background: rgba(220, 38, 38, 0.05);
+}
+
+body.theme-light .composer {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(0, 0, 0, 0.12);
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.1);
+}
+
+body.theme-light .composer textarea {
+  background: transparent;
+  color: #1a1a1a;
+}
+
+body.theme-light .composer textarea::placeholder {
+  color: #9ca3af;
+}
+
+body.theme-light .shortcuts-bar-item {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(0, 0, 0, 0.12);
+  color: #4b5563;
+}
+
+body.theme-light .shortcuts-bar-item:hover {
+  background: rgba(22, 163, 74, 0.1);
+  border-color: rgba(22, 163, 74, 0.3);
+  color: #166534;
+}
+
+body.theme-light .start-screen {
+  color: #1a1a1a;
+}
+
+body.theme-light .start-screen h2 {
+  color: #111827;
+}
+
+body.theme-light .start-screen .start-copy {
+  color: #6b7280;
+}
+
+body.theme-light .start-shortcuts-label {
+  color: #9ca3af;
+}
+
+body.theme-light .start-prompts button {
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  color: #374151;
+}
+
+body.theme-light .start-prompts button:hover {
+  background: rgba(22, 163, 74, 0.1);
+  border-color: rgba(22, 163, 74, 0.3);
+  color: #166534;
+}
+
+body.theme-light .summary {
+  color: #6b7280;
+}
+
+body.theme-light .chat-panel {
+  background: transparent;
+}
+
+body.theme-light .mobile-menu-button {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(0, 0, 0, 0.12);
+  color: #374151;
+}
+
+body.theme-light .mobile-account-button {
+  background: linear-gradient(135deg, #16a34a, #0d9488);
+  color: white;
+}
+
+body.theme-light .logout-button {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(0, 0, 0, 0.12);
+  color: #374151;
+}
+
+body.theme-light .logout-button:hover {
+  background: rgba(220, 38, 38, 0.1);
+  border-color: rgba(220, 38, 38, 0.3);
+  color: #dc2626;
+}
+
+body.theme-light .mic-button {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(0, 0, 0, 0.12);
+  color: #6b7280;
+}
+
+body.theme-light .mic-button:hover {
+  background: rgba(22, 163, 74, 0.1);
+  border-color: rgba(22, 163, 74, 0.3);
+  color: #16a34a;
+}
+
+body.theme-light .mic-button.listening {
+  background: rgba(22, 163, 74, 0.15);
+  border-color: #16a34a;
+  color: #16a34a;
+}
+
+body.theme-light .retry-button {
+  background: rgba(220, 38, 38, 0.08);
+  border-color: rgba(220, 38, 38, 0.25);
+  color: #dc2626;
+}
+
+body.theme-light .retry-button:hover {
+  background: rgba(220, 38, 38, 0.15);
+  border-color: rgba(220, 38, 38, 0.4);
+}
+
+body.theme-light .settings-modal {
+  background: rgba(248, 250, 249, 0.98);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  color: #1a1a1a;
+}
+
+body.theme-light .settings-nav-item {
+  color: #6b7280;
+}
+
+body.theme-light .settings-nav-item:hover {
+  background: rgba(22, 163, 74, 0.08);
+  color: #166534;
+}
+
+body.theme-light .settings-nav-item.active {
+  background: rgba(22, 163, 74, 0.12);
+  color: #166534;
+  border-color: rgba(22, 163, 74, 0.3);
+}
+
+body.theme-light .settings-pane-title {
+  color: #111827;
+}
+
+body.theme-light .settings-section-title {
+  color: #374151;
+}
+
+body.theme-light .settings-section-desc {
+  color: #6b7280;
+}
+
+body.theme-light .settings-row-text strong {
+  color: #1f2937;
+}
+
+body.theme-light .settings-row-text small {
+  color: #9ca3af;
+}
+
+body.theme-light .settings-select {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(0, 0, 0, 0.12);
+  color: #374151;
+}
+
+body.theme-light .settings-select:hover {
+  border-color: rgba(22, 163, 74, 0.4);
+}
+
+body.theme-light .settings-close {
+  color: #6b7280;
+}
+
+body.theme-light .settings-close:hover {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.1);
+}
+
+body.theme-light .settings-toggle-slider {
+  background: #d1d5db;
+}
+
+body.theme-light .settings-toggle input:checked + .settings-toggle-slider {
+  background: #16a34a;
+}
+
+body.theme-light .settings-toggle-slider::before {
+  background: white;
+}
+
+body.theme-light .profile-modal {
+  background: rgba(248, 250, 249, 0.98);
+  color: #1a1a1a;
+}
+
+body.theme-light .profile-modal-title {
+  color: #111827;
+}
+
+body.theme-light .profile-field-label {
+  color: #6b7280;
+}
+
+body.theme-light .profile-hint {
+  color: #9ca3af;
+}
+
+body.theme-light .profile-btn-cancel {
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.12);
+  color: #374151;
+}
+
+body.theme-light .profile-btn-cancel:hover {
+  background: rgba(220, 38, 38, 0.1);
+  border-color: rgba(220, 38, 38, 0.3);
+  color: #dc2626;
+}
+
+body.theme-light .profile-btn-save {
+  background: linear-gradient(135deg, #16a34a, #0d9488);
+  color: white;
+}
+
+body.theme-light .profile-btn-save:hover {
+  filter: brightness(1.05);
+}
+
+body.theme-light .profile-modal-close {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(0, 0, 0, 0.12);
+  color: #6b7280;
+}
+
+body.theme-light .profile-modal-close:hover {
+  background: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+}
+
+body.theme-light .toast {
+  background: rgba(255, 255, 255, 0.98);
+  border-color: rgba(0, 0, 0, 0.1);
+  color: #1a1a1a;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+}
+
+body.theme-light .toast-message {
+  color: #374151;
+}
+
+body.theme-light .account-menu {
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  color: #1a1a1a;
+}
+
+body.theme-light .account-menu button[role="menuitem"]:hover {
+  background: rgba(22, 163, 74, 0.08);
+  color: #166534;
+}
+
+body.theme-light .account-menu button.danger:hover {
+  background: rgba(220, 38, 38, 0.08);
+  color: #dc2626;
+}
+
+body.theme-light .typing-indicator span {
+  background: #9ca3af;
+}
+
+body.theme-light .skip-link {
+  background: #16a34a;
+  color: white;
+}
+
+body.theme-light .skip-link:focus {
+  outline-color: #d97706;
+}
+
+body.theme-light .auth-card {
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  color: #1a1a1a;
+}
+
+body.theme-light .auth-card h1 {
+  color: #111827;
+}
+
+body.theme-light .auth-card p {
+  color: #6b7280;
+}
+
+body.theme-light .auth-toggle {
+  color: #16a34a;
+}
+
+body.theme-light .auth-error {
+  color: #dc2626;
+}
+
+body.theme-light .insight-panel {
+  display: none;
 }
 
 * {
