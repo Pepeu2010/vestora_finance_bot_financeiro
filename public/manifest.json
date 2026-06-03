@@ -1,17 +1,43 @@
 {
   "name": "Bot Financeiro",
-  "short_name": "Bot Financeiro",
-  "description": "Assistente de educacao financeira com IA.",
+  "short_name": "Bot Fin.",
+  "description": "Assistente de educação financeira com IA. Tome melhores decisões sobre imóveis, investimentos e finanças.",
   "start_url": "/",
+  "id": "/",
   "display": "standalone",
-  "background_color": "#f3f7f5",
+  "orientation": "portrait-primary",
+  "background_color": "#050806",
   "theme_color": "#0f766e",
+  "lang": "pt-BR",
+  "categories": ["finance", "productivity", "utilities"],
   "icons": [
     {
-      "src": "/icon.svg?v=32",
+      "src": "/icon.svg?v=40",
       "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
     }
-  ]
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Nova Conversa",
+      "short_name": "Novo",
+      "description": "Iniciar uma nova conversa",
+      "url": "/?action=new",
+      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+    }
+  ],
+  "related_applications": [],
+  "prefer_related_applications": false
 }

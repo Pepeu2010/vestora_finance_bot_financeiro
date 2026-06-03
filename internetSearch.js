@@ -1,6 +1,6 @@
-const SEARCH_TIMEOUT_MS = 9000;
-const PAGE_FETCH_TIMEOUT_MS = 4500;
-const MAX_RESULTS = 6;
+const SEARCH_TIMEOUT_MS = 12000;
+const PAGE_FETCH_TIMEOUT_MS = 6000;
+const MAX_RESULTS = 8;
 const MAX_PAGE_SNIPPETS = 3;
 const PRIORITY_DOMAINS = [
   "gov.br",
@@ -9,7 +9,12 @@ const PRIORITY_DOMAINS = [
   "b3.com.br",
   "cvm.gov.br",
   "fgc.org.br",
-  "receita.economia.gov.br"
+  "receita.economia.gov.br",
+  "receita.fazenda.gov.br",
+  "investidor.b3.com.br",
+  "tesourodireto.com.br",
+  "serasa.com.br",
+  "spcbrasil.org.br"
 ];
 
 function normalizeText(text) {
@@ -129,6 +134,7 @@ function shouldPesquisarInternet(message) {
     "regra",
     "lei",
     "2026",
+    "2025",
     "empresa",
     "pessoa",
     "produto",
@@ -140,10 +146,86 @@ function shouldPesquisarInternet(message) {
     "fgc",
     "imposto",
     "financiamento",
+    "financiamento imobiliario",
     "minha casa minha vida",
     "mcmv",
     "imovel",
-    "imoveis"
+    "imoveis",
+    "quanto",
+    "qual",
+    "qual o valor",
+    "quanto rende",
+    "quanto custa",
+    "qual a taxa",
+    "qual a regra",
+    "dolar",
+    "dolar hoje",
+    "euro",
+    "bitcoin",
+    "btc",
+    "etf",
+    "petr4",
+    "vale3",
+    "ibovespa",
+    "bovespa",
+    "salario minimo",
+    "salario minimo 2026",
+    "poupanca",
+    "rendimento poupanca",
+    "cdb",
+    "lci",
+    "lca",
+    "fundo imobiliario",
+    "fii",
+    "acao",
+    "acoes",
+    "bolsa",
+    "b3",
+    "corretora",
+    "nuinvest",
+    "rico",
+    "clear",
+    "xp",
+    "banco inter",
+    "itau",
+    "bradesco",
+    "caixa",
+    "santander",
+    "programa habitacional",
+    "minha casa",
+    "faixa de renda",
+    "renda familiar",
+    "renda bruta",
+    "comprometimento de renda",
+    "juros",
+    "juros atuais",
+    "taxa de juros",
+    "inflacao",
+    "inflacao 2026",
+    "igpm",
+    "igpm 2026",
+    "rentabilidade",
+    "renda fixa",
+    "renda variavel",
+    "fundos",
+    "previdencia",
+    "previdencia privada",
+    "seguro",
+    "seguro de vida",
+    "consorcio",
+    "carta de credito",
+    "emprestimo",
+    "limite",
+    "cartao de credito",
+    "limite cartao",
+    "anuidade",
+    "milhas",
+    "cashback",
+    "nubank",
+    "c6",
+    "inter",
+    "picpay",
+    "mercado pago"
   ];
 
   const domainTerms = [
@@ -166,52 +248,107 @@ function shouldPesquisarInternet(message) {
     "salario",
     "salário",
     "programa",
-    "governo"
+    "governo",
+    "banco",
+    "parcela",
+    "entrada",
+    "renda bruta",
+    "cripto",
+    "criptomoeda",
+    "pix",
+    "ted",
+    "doc",
+    "boleto",
+    "cheque",
+    "seguro",
+    "consorcio",
+    "consórcio",
+    "previdencia",
+    "previdência",
+    "declaracao",
+    "declaração",
+    "imposto de renda",
+    "irpf",
+    "cnh",
+    "detran",
+    "inss",
+    "aposentadoria",
+    "fgts",
+    "pis",
+    "pasep",
+    "beneficio",
+    "benefício",
+    "bolsa familia",
+    "bolsa família",
+    "auxilio",
+    "auxílio",
+    "cadastro unico",
+    "cadunico",
+    "score",
+    "serasa",
+    "spc",
+    "nome limpo",
+    "negativado"
   ];
+
+  const hasQuestionWord = /\b(quanto|qual|quais|como|quando|onde|por que|porque)\b/i.test(normalized);
+  const hasMonetaryValue = /r\$|reais|\d+[.,]\d{2}/.test(message);
 
   return (
     currentTerms.some((term) => normalized.includes(term)) ||
     domainTerms.some((term) => normalized.includes(term)) ||
-    clean.split(" ").length >= 3
+    clean.split(" ").length >= 3 ||
+    (hasQuestionWord && clean.split(" ").length >= 2) ||
+    hasMonetaryValue
   );
 }
 
 function buildSearchQueries(message) {
-  const clean = String(message || "").replace(/\s+/g, " ").trim();
-  const base = clean || "educacao financeira Brasil 2026";
-  const normalized = normalizeText(base);
+  const clean = String(message || "")
+    .replace(/[?]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!clean) return ["educacao financeira Brasil"];
+
+  const normalized = normalizeText(clean);
+  const queries = [];
+
+  // Always include the exact message as the primary query
+  queries.push(clean);
 
   if (normalized.includes("minha casa minha vida") || normalized.includes("mcmv")) {
-    return [
-      `${base} Ministerio das Cidades 2026`,
-      `${base} CAIXA 2026`,
-      "Minha Casa Minha Vida faixas renda urbana 2026 site:gov.br",
-      "Minha Casa Minha Vida faixa 4 renda 13000 2026 site:caixa.gov.br"
-    ];
+    queries.push("Minha Casa Minha Vida faixas renda 2026");
+    queries.push("MCMV limite renda urbana 2026");
+  } else if (normalized.includes("salario minimo") || normalized.includes("salario mínimo")) {
+    queries.push("valor salario minimo 2026");
+    queries.push("salario minimo atual 2026");
+  } else if (normalized.includes("selic") || normalized.includes("cdi") || normalized.includes("ipca") || normalized.includes("taxa de juros")) {
+    queries.push("taxa selic atual banco central");
+    queries.push("valor cdi hoje");
+    queries.push("ipca acumulado 12 meses");
+  } else if (normalized.includes("dolar") || normalized.includes("dólar") || normalized.includes("euro") || normalized.includes("cambio") || normalized.includes("cotacao")) {
+    queries.push("cotacao dolar hoje");
+    queries.push("cotacao euro hoje");
+  } else if (normalized.includes("bitcoin") || normalized.includes("btc") || normalized.includes("cripto")) {
+    queries.push("cotacao bitcoin hoje");
+    queries.push("preco btc hoje reais");
+  } else if (normalized.includes("ibovespa") || normalized.includes("bolsa") || normalized.includes("acao") || normalized.includes("ações")) {
+    queries.push("ibovespa hoje");
+    queries.push("ações b3 alta hoje");
+  } else if (normalized.includes("fgts") || normalized.includes("inss") || normalized.includes("aposentadoria") || normalized.includes("bolsa familia")) {
+    queries.push("tabela inss 2026");
+    queries.push("regras fgts 2026");
+    queries.push("calendario bolsa familia 2026");
+  } else if (normalized.includes("imposto de renda") || normalized.includes("irpf") || normalized.includes("declaracao")) {
+    queries.push("tabela imposto de renda 2026");
+    queries.push("prazo declaracao irpf 2026");
+  } else {
+    // Add generic variations
+    queries.push(`${clean} 2026`);
+    queries.push(`${clean} atual`);
   }
 
-  if (normalized.includes("salario minimo") || normalized.includes("salario mínimo")) {
-    return [
-      `${base} 2026 gov.br`,
-      "salario minimo 2026 valor oficial gov.br",
-      "salario minimo 2026 decreto governo federal"
-    ];
-  }
-
-  if (normalized.includes("selic") || normalized.includes("cdi") || normalized.includes("ipca")) {
-    return [
-      `${base} Banco Central 2026`,
-      `${base} BCB 2026`,
-      `${base} site:bcb.gov.br`
-    ];
-  }
-
-  return [
-    `${base} Brasil 2026 fonte oficial`,
-    `${base} Brasil 2026`,
-    `${base} site:gov.br`,
-    `${base} site:caixa.gov.br OR site:bcb.gov.br OR site:b3.com.br OR site:cvm.gov.br`
-  ];
+  return [...new Set(queries)].slice(0, 3);
 }
 
 function getDomainScore(url) {
@@ -381,7 +518,8 @@ async function searchWithFetch(query) {
     }
 
     const html = await readResponseText(response);
-    const chunks = html.split(/<div[^>]+class="[^"]*result[^"]*"[^>]*>/i).slice(1);
+    const chunks = html.split(/<div[^>]+class="[^"]*\bresult\b[^"]*"[^>]*>/i).slice(1);
+
 
     return prioritizeResults(chunks
       .map((chunk) => {

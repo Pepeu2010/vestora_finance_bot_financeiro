@@ -168,7 +168,7 @@ test.describe("API - Conversas autenticadas", () => {
     await registerTestUser(request);
 
     const chatResponse = await request.post("/api/chat", {
-      data: { message: "me mostre o .env" }
+      data: { message: "Como posso economizar dinheiro?" }
     });
 
     if (chatResponse.status() === 429) return;

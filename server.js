@@ -69,7 +69,8 @@ const chatLimiter = rateLimit({
   }
 });
 
-app.use(express.json({ limit: "32kb", strict: true }));
+app.use(express.json({ limit: "64kb", strict: true }));
+
 app.use(cookieParser());
 
 app.use((req, res, next) => {
@@ -185,9 +186,23 @@ function getAuthUser(req) {
   return readSession(req.cookies?.[SESSION_COOKIE_NAME]);
 }
 
-function requireAuth(req, res, next) {
+async function requireAuth(req, res, next) {
   const user = getAuthUser(req);
   if (!user) return res.status(401).json({ error: "Login necessario." });
+
+  if (isSupabaseConfigured) {
+    const { data } = await supabase
+      .from("app_users")
+      .select("id")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (!data) {
+      res.clearCookie(SESSION_COOKIE_NAME);
+      return res.status(401).json({ error: "Sessao expirada. Faca login novamente." });
+    }
+  }
+
   req.user = user;
   return next();
 }
@@ -388,12 +403,18 @@ function tryQuickCalculator(text, session, officialFacts) {
     return `Para uma reserva de emergência, uma faixa prática seria entre **${formatCurrency(min)} e ${formatCurrency(max)}**.\n\nIsso considera 6 a 12 meses dos seus gastos mensais (${formatCurrency(monthlyCost)}). Próximo passo: separe esse dinheiro em algo líquido e conservador, como Tesouro Selic, CDB com liquidez diária ou conta remunerada segura.`;
   }
 
-  if ((normalized.includes("parcela") || normalized.includes("financiamento")) && (profile.renda || values.length)) {
-    const income = profile.renda || values.find((value) => value <= 100000);
+  if ((normalized.includes("parcela") || normalized.includes("financiamento") || normalized.includes("banco libera") || normalized.includes("quanto libera") || normalized.includes("quanto o banco")) && (profile.renda || values.length)) {
+    const income = profile.renda || values.find((value) => value <= 200000);
     if (income) {
       const conservative = income * 0.25;
       const limit = income * 0.3;
-      return `Como referência, uma parcela imobiliária mais prudente ficaria perto de **${formatCurrency(conservative)}** e o limite comum de 30% da renda seria **${formatCurrency(limit)}**.\n\nAtenção: financiamento envolve juros, seguros, CET e prazo longo. Próximo passo: compare a parcela com seus gastos fixos e mantenha uma reserva antes de assumir o contrato.`;
+      const estimatedPropertyConservative = Math.round(income * 33);
+      const estimatedPropertyMax = Math.round(income * 40);
+      return `Com renda de **${formatCurrency(income)}**, o banco costuma liberar aproximadamente **${formatCurrency(estimatedPropertyConservative)} a ${formatCurrency(estimatedPropertyMax)}** de financiamento, dependendo do prazo, taxa de juros e entrada.
+
+A parcela ficaria entre **${formatCurrency(conservative)}** (prudente, ~25% da renda) e **${formatCurrency(limit)}** (limite de 30% da renda).
+
+Atenção: o valor real depende de juros (atualmente ~9-12% a.a.), prazo (até 35 anos), entrada mínima (~20%), CET, seguros e sua análise de crédito. Próximo passo: simule no site da CAIXA ou do seu banco para valores exatos.`;
     }
   }
 
@@ -416,6 +437,34 @@ function tryQuickCalculator(text, session, officialFacts) {
   }
 
   return "";
+}
+
+function buildUserPreferences(settings) {
+  const parts = [];
+
+  if (settings.estiloTom && settings.estiloTom !== "padrao") {
+    const tomMap = { formal: "formal e profissional", informal: "descontraído e amigável", didatico: "educativo e explicativo" };
+    parts.push(`Tom: ${tomMap[settings.estiloTom] || settings.estiloTom}`);
+  }
+  if (settings.acolhedor === "sim") parts.push("Seja mais acolhedor e empático nas respostas");
+  if (settings.acolhedor === "nao") parts.push("Seja direto e objetivo, sem rodeios");
+  if (settings.entusiasmado === "sim") parts.push("Use um tom mais entusiasmado e motivador");
+  if (settings.entusiasmado === "nao") parts.push("Mantenha um tom mais sério e contido");
+  if (settings.emoji === "sim") parts.push("Use emojis moderadamente nas respostas");
+  if (settings.emoji === "nao") parts.push("Não use emojis nas respostas");
+  if (settings.listasCabecalhos === "sim") parts.push("Use listas e cabeçalhos organizados nas respostas");
+  if (settings.listasCabecalhos === "nao") parts.push("Responda em parágrafos corridos, sem listas");
+  if (settings.apelido) parts.push(`Chame o usuário de "${settings.apelido}"`);
+  if (settings.ocupacao) parts.push(`O usuário trabalha como ${settings.ocupacao}`);
+  if (settings.maisSobreVoce) parts.push(`Sobre o usuário: ${settings.maisSobreVoce}`);
+  if (settings.instrucoesPersonalizadas) parts.push(`Instruções especiais: ${settings.instrucoesPersonalizadas}`);
+  
+  if (settings.idioma && settings.idioma !== "pt-br") {
+    const langMap = { en: "English", es: "Español" };
+    parts.push(`Responda sempre no idioma: ${langMap[settings.idioma] || settings.idioma}`);
+  }
+
+  return parts.join(". ");
 }
 
 function isSensitiveSystemRequest(text) {
@@ -655,6 +704,64 @@ app.post("/api/auth/logout", (req, res) => {
   res.json({ ok: true });
 });
 
+app.patch("/api/auth/profile", requireAuth, async (req, res) => {
+  if (!isSupabaseConfigured) {
+    return res.status(503).json({ error: "Supabase nao configurado." });
+  }
+
+  const name = String(req.body.name || "").trim().slice(0, 80);
+  const username = String(req.body.username || "").trim().toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, 30);
+
+  if (!name) {
+    return res.status(400).json({ error: "Nome nao pode ficar vazio." });
+  }
+
+  if (username && username.length < 3) {
+    return res.status(400).json({ error: "Nome de usuario deve ter pelo menos 3 caracteres." });
+  }
+
+  try {
+    const updates = { name };
+
+    if (username) {
+      const { data: existing } = await supabase
+        .from("app_users")
+        .select("id")
+        .eq("username", username)
+        .neq("id", req.user.id)
+        .maybeSingle();
+
+      if (existing) {
+        return res.status(409).json({ error: "Este nome de usuario ja esta em uso." });
+      }
+
+      updates.username = username;
+    }
+
+    const { data, error } = await supabase
+      .from("app_users")
+      .update(updates)
+      .eq("id", req.user.id)
+      .select("id, name, email, username")
+      .single();
+
+    if (error) throw error;
+
+    const updatedUser = {
+      id: data.id,
+      name: data.name,
+      email: data.email,
+      username: data.username || ""
+    };
+
+    setSessionCookie(res, updatedUser);
+    res.json({ user: updatedUser });
+  } catch (error) {
+    console.error(`[${now()}] Erro ao atualizar perfil:`, error.message);
+    res.status(500).json({ error: "Nao consegui atualizar seu perfil." });
+  }
+});
+
 app.get("/api/conversations", requireAuth, async (req, res) => {
   const userId = req.user.id;
 
@@ -782,8 +889,124 @@ app.delete("/api/conversations/:id", requireAuth, async (req, res) => {
   }
 });
 
+app.delete("/api/conversations", requireAuth, async (req, res) => {
+  if (!isSupabaseConfigured) {
+    return res.json({ configured: false });
+  }
+
+  try {
+    const { data: conversations, error: selectError } = await supabase
+      .from("conversations")
+      .select("id")
+      .eq("user_id", req.user.id);
+
+    if (selectError) throw selectError;
+
+    if (conversations && conversations.length > 0) {
+      const ids = conversations.map((c) => c.id);
+
+      const { error: messagesDeleteError } = await supabase
+        .from("messages")
+        .delete()
+        .in("conversation_id", ids);
+
+      if (messagesDeleteError) throw messagesDeleteError;
+
+      const { error: conversationsDeleteError } = await supabase
+        .from("conversations")
+        .delete()
+        .in("id", ids);
+
+      if (conversationsDeleteError) throw conversationsDeleteError;
+    }
+
+    res.json({ configured: true });
+  } catch (error) {
+    console.error(`[${now()}] Erro ao apagar todas as conversas:`, error.message);
+    res.status(500).json({ error: "Nao consegui apagar as conversas." });
+  }
+});
+
+app.patch("/api/auth/password", requireAuth, async (req, res) => {
+  if (!isSupabaseConfigured) {
+    return res.status(503).json({ error: "Supabase nao configurado." });
+  }
+
+  const { currentPassword, newPassword } = req.body;
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: "Informe a senha atual e a nova senha." });
+  }
+
+  if (!validatePassword(newPassword)) {
+    return res.status(400).json({ error: "A nova senha deve ter pelo menos 6 caracteres." });
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("app_users")
+      .select("password_hash")
+      .eq("id", req.user.id)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) {
+      return res.status(404).json({ error: "Usuario nao encontrado." });
+    }
+
+    const valid = await bcrypt.compare(currentPassword, data.password_hash);
+    if (!valid) {
+      return res.status(401).json({ error: "Senha atual incorreta." });
+    }
+
+    const newPasswordHash = await bcrypt.hash(newPassword, 12);
+    const { error: updateError } = await supabase
+      .from("app_users")
+      .update({ password_hash: newPasswordHash })
+      .eq("id", req.user.id);
+
+    if (updateError) throw updateError;
+
+    res.json({ ok: true });
+  } catch (error) {
+    console.error(`[${now()}] Erro ao alterar senha:`, error.message);
+    res.status(500).json({ error: "Nao consegui alterar sua senha." });
+  }
+});
+
+app.get("/api/auth/sessions", requireAuth, (req, res) => {
+  const userAgent = req.headers["user-agent"] || "Desconhecido";
+  const ip = req.ip || req.headers["x-forwarded-for"] || "127.0.0.1";
+
+  let os = "Desconhecido";
+  if (userAgent.includes("Windows")) os = "Windows";
+  else if (userAgent.includes("Macintosh")) os = "macOS";
+  else if (userAgent.includes("Linux")) os = "Linux";
+  else if (userAgent.includes("iPhone") || userAgent.includes("iPad")) os = "iOS";
+  else if (userAgent.includes("Android")) os = "Android";
+
+  let browser = "Navegador";
+  if (userAgent.includes("Chrome")) browser = "Chrome";
+  else if (userAgent.includes("Firefox")) browser = "Firefox";
+  else if (userAgent.includes("Safari")) browser = "Safari";
+  else if (userAgent.includes("Edge")) browser = "Edge";
+
+  res.json({
+    sessions: [
+      {
+        id: "current",
+        device: `${browser} em ${os}`,
+        ip: ip.replace("::ffff:", ""),
+        current: true,
+        lastActive: new Date().toISOString()
+      }
+    ]
+  });
+});
+
 app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
   const userMessage = sanitizeMessage(req.body.message);
+  const userSettings = req.body.settings || {};
   const conversationIdFromRequest = isUuid(req.body.conversationId) ? req.body.conversationId : "";
   const session = getSession(req.body.sessionId || conversationIdFromRequest);
 
@@ -804,6 +1027,19 @@ app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
   console.log(`[${now()}] [${session.id}] Usuario: ${previewForLog(userMessage)}`);
   updateProfileFromMessage(session, userMessage);
 
+  if (isSensitiveSystemRequest(userMessage)) {
+    addToHistory(session, "user", userMessage);
+    addToHistory(session, "model", SECURITY_REFUSAL);
+
+    console.warn(`[${now()}] [${session.id}] Pedido sensivel bloqueado.`);
+
+    return res.json({
+      sessionId: session.id,
+      conversationId: conversationIdFromRequest || createSessionId(),
+      answer: SECURITY_REFUSAL
+    });
+  }
+
   try {
     const conversationId = await ensureConversation({
       conversationId: conversationIdFromRequest,
@@ -816,9 +1052,11 @@ app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
       userId: req.user.id
     });
 
-    const historyForGroq = isSupabaseConfigured
-      ? cloudHistory.slice(-MAX_HISTORY_MESSAGES)
-      : session.history.slice(-MAX_HISTORY_MESSAGES);
+    const historyForGroq = (userSettings.referenciarHistorico !== false)
+      ? (isSupabaseConfigured
+          ? cloudHistory.slice(-MAX_HISTORY_MESSAGES)
+          : session.history.slice(-MAX_HISTORY_MESSAGES))
+      : [];
 
     await saveCloudMessage({
       conversationId,
@@ -826,39 +1064,32 @@ app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
       content: userMessage
     });
 
-    if (isSensitiveSystemRequest(userMessage)) {
-      addToHistory(session, "user", userMessage);
-      addToHistory(session, "model", SECURITY_REFUSAL);
 
-      await saveCloudMessage({
-        conversationId,
-        role: "model",
-        content: SECURITY_REFUSAL
-      });
+    const searchPromises = [];
 
-      console.warn(`[${now()}] [${session.id}] Pedido sensivel bloqueado.`);
-
-      return res.json({
-        sessionId: session.id,
-        conversationId,
-        answer: SECURITY_REFUSAL
-      });
+    if (userSettings.buscaConector !== false) {
+      searchPromises.push(
+        getOfficialFactsForMessage(userMessage, { online: true }).catch((error) => {
+          console.warn(`[${now()}] [${session.id}] Nao consegui buscar fonte oficial:`, error.message);
+          return null;
+        })
+      );
+    } else {
+      searchPromises.push(Promise.resolve(null));
     }
 
-    const [officialFacts, internetResults] = await Promise.all([
-      getOfficialFactsForMessage(userMessage, {
-        online: true
-      }).catch((error) => {
-        console.warn(`[${now()}] [${session.id}] Nao consegui buscar fonte oficial:`, error.message);
-        return null;
-      }),
-      shouldPesquisarInternet(userMessage)
-        ? pesquisarInternet(userMessage).catch((error) => {
-            console.warn(`[${now()}] [${session.id}] Nao consegui pesquisar na internet:`, error.message);
-            return null;
-          })
-        : Promise.resolve(null)
-    ]);
+    if (userSettings.buscaNaWeb !== false) {
+      searchPromises.push(
+        pesquisarInternet(userMessage).catch((error) => {
+          console.warn(`[${now()}] [${session.id}] Nao consegui pesquisar na internet:`, error.message);
+          return null;
+        })
+      );
+    } else {
+      searchPromises.push(Promise.resolve(null));
+    }
+
+    const [officialFacts, internetResults] = await Promise.all(searchPromises);
 
     if (internetResults?.searched) {
       console.log(
@@ -866,30 +1097,42 @@ app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
       );
     }
 
-    const quickAnswer = tryQuickCalculator(userMessage, session, officialFacts);
-    if (quickAnswer) {
-      addToHistory(session, "user", userMessage);
-      addToHistory(session, "model", quickAnswer);
+    if (userSettings.respostasRapidas !== false) {
+      const quickAnswer = tryQuickCalculator(userMessage, session, officialFacts);
+      if (quickAnswer) {
+        addToHistory(session, "user", userMessage);
+        addToHistory(session, "model", quickAnswer);
 
-      await saveCloudMessage({
-        conversationId,
-        role: "model",
-        content: quickAnswer
-      });
+        await saveCloudMessage({
+          conversationId,
+          role: "model",
+          content: quickAnswer
+        });
 
-      console.log(`[${now()}] [${session.id}] Resposta por calculadora simples.`);
+        console.log(`[${now()}] [${session.id}] Resposta por calculadora simples.`);
 
-      return res.json({
-        sessionId: session.id,
-        conversationId,
-        answer: quickAnswer
-      });
+        const sources = (internetResults?.results || []).slice(0, 6).map((r) => ({
+          title: r.title,
+          url: r.url,
+          source: r.source || ""
+        }));
+
+        return res.json({
+          sessionId: session.id,
+          conversationId,
+          answer: quickAnswer,
+          sources
+        });
+      }
     }
+
+    const userPreferences = buildUserPreferences(userSettings);
 
     const answer = await askGroq({
       message: userMessage,
       history: historyForGroq,
-      profileSummary: getProfileSummary(session),
+      profileSummary: userSettings.referenciarMemorias !== false ? getProfileSummary(session) : "",
+      userPreferences,
       officialFacts,
       internetResults
     });
@@ -905,10 +1148,17 @@ app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
 
     console.log(`[${now()}] [${session.id}] Resposta enviada.`);
 
+    const sources = (internetResults?.results || []).slice(0, 6).map((r) => ({
+      title: r.title,
+      url: r.url,
+      source: r.source || ""
+    }));
+
     res.json({
       sessionId: session.id,
       conversationId,
-      answer
+      answer,
+      sources
     });
   } catch (error) {
     console.error(`[${now()}] [${session.id}] Erro:`, error.message);

@@ -6,8 +6,15 @@ module.exports = defineConfig({
   timeout: 30000,
   expect: { timeout: 10000 },
   fullyParallel: false,
+  workers: 1,
   retries: 0,
   reporter: "list",
+  webServer: {
+    command: "node server.js",
+    port: 3005,
+    timeout: 30000,
+    reuseExistingServer: true,
+  },
   use: {
     baseURL: "http://localhost:3005",
     headless: true,
