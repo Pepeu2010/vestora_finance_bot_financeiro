@@ -83,3 +83,16 @@ pnpm-lock.yaml
 # Dump de memoria / core
 *.core
 core
+
+# Vite
+.vite/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.bak
+*.swp
+*.swo
+*~
