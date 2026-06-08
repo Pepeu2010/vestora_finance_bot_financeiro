@@ -30,7 +30,7 @@ test.describe("API - Health Check", () => {
 
     const body = await response.json();
     expect(body.ok).toBe(true);
-    expect(body.app).toBe("Bot Financeiro");
+    expect(body.app).toBe("Vestora");
     expect(typeof body.sessions).toBe("number");
     expect(typeof body.supabase).toBe("boolean");
   });

@@ -1,6 +1,6 @@
-const CACHE_NAME = "bot-financeiro-v40";
-const STATIC_CACHE = "bot-financeiro-static-v40";
-const DYNAMIC_CACHE = "bot-financeiro-dynamic-v40";
+const CACHE_NAME = "vestora-v41";
+const STATIC_CACHE = "vestora-static-v41";
+const DYNAMIC_CACHE = "vestora-dynamic-v41";
 
 const STATIC_ASSETS = [
   "/",
@@ -13,7 +13,7 @@ const STATIC_ASSETS = [
 
 const MAX_DYNAMIC_ITEMS = 100;
 const OFFLINE_MESSAGE = {
-  answer: "Você está offline. Quando a conexão voltar, suas mensagens serão sincronizadas automaticamente."
+  answer: "Você está offline no momento. Assim que a conexão voltar, a Vestora retomará a sincronização automaticamente."
 };
 
 self.addEventListener("install", (event) => {
@@ -159,12 +159,12 @@ async function syncPendingMessages() {
 
 self.addEventListener("push", (event) => {
   const data = event.data?.json() || {};
-  const title = data.title || "Bot Financeiro";
+  const title = data.title || "Vestora";
   const options = {
-    body: data.body || "Nova mensagem",
+    body: data.body || "Nova atualização financeira disponível.",
     icon: "/icon.svg",
     badge: "/favicon.svg",
-    tag: "bot-financeiro-notification",
+    tag: "vestora-notification",
     requireInteraction: false
   };
 

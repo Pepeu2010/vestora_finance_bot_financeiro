@@ -46,7 +46,7 @@ async function fetchText(url) {
   try {
     const response = await fetch(url, {
       headers: {
-        "User-Agent": "BotFinanceiro/1.0 (+https://github.com/Pepeu2010/bot_financeiro)"
+        "User-Agent": "Vestora/1.0 (+https://github.com/Pepeu2010/vestora)"
       },
       signal: controller.signal
     });
@@ -75,7 +75,7 @@ async function fetchJson(url) {
   try {
     const response = await fetch(url, {
       headers: {
-        "User-Agent": "BotFinanceiro/1.0 (+https://github.com/Pepeu2010/bot_financeiro)"
+        "User-Agent": "Vestora/1.0 (+https://github.com/Pepeu2010/vestora)"
       },
       signal: controller.signal
     });

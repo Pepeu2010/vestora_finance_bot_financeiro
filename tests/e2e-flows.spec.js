@@ -64,13 +64,16 @@ test.describe("E2E - Complete User Flows", () => {
         body: JSON.stringify({ configured: false, conversations: [] })
       })
     );
-    await page.route("**/api/chat", async (route) => {
+    await page.route("**/api/chat/stream", async (route) => {
       const body = await route.request().postData();
       chatRequestBody = body;
       await page.waitForTimeout(150);
       await route.fulfill({
-        contentType: "application/json",
-        body: JSON.stringify({ answer: "A taxa Selic atual é 14,25% ao ano." })
+        contentType: "text/event-stream",
+        body: [
+          `data: ${JSON.stringify({ type: "chunk", text: "A taxa Selic atual é 14,25% ao ano." })}\n\n`,
+          `data: ${JSON.stringify({ type: "done", conversationId: "conv-e2e" })}\n\n`
+        ].join("")
       });
     });
 
@@ -208,12 +211,12 @@ test.describe("E2E - Complete User Flows", () => {
     await page.goto("/");
 
     const quickPrompts = [
-      "Comprar imóvel",
-      "Vender imóvel",
+      "Plano financeiro",
+      "Organizar patrimônio",
       "Financiamento",
       "Investir melhor",
       "Sair das dívidas",
-      "Montar reserva"
+      "Reserva"
     ];
 
     for (const label of quickPrompts) {
@@ -378,7 +381,7 @@ test.describe("Error States", () => {
     await page.waitForTimeout(500);
   });
 
-  test("send button is disabled while sending", async ({ page }) => {
+  test("send button switches to stop mode while sending", async ({ page }) => {
     let requestHandled = false;
     await page.route("**/api/auth/me", (route) =>
       route.fulfill({
@@ -395,12 +398,15 @@ test.describe("Error States", () => {
         body: JSON.stringify({ configured: false, conversations: [] })
       })
     );
-    await page.route("**/api/chat", async (route) => {
+    await page.route("**/api/chat/stream", async (route) => {
       requestHandled = true;
       await page.waitForTimeout(500);
       await route.fulfill({
-        contentType: "application/json",
-        body: JSON.stringify({ answer: "Resposta lenta." })
+        contentType: "text/event-stream",
+        body: [
+          `data: ${JSON.stringify({ type: "chunk", text: "Resposta lenta." })}\n\n`,
+          `data: ${JSON.stringify({ type: "done", conversationId: "conv-slow" })}\n\n`
+        ].join("")
       });
     });
 
@@ -409,9 +415,9 @@ test.describe("Error States", () => {
     await page.locator("#messageInput").fill("Mensagem lenta");
     await page.locator("#sendButton").click();
 
-    await expect(page.locator("#sendButton")).toBeDisabled();
+    await expect(page.locator("#sendButton")).toHaveAttribute("aria-label", "Parar geração");
 
-    await page.waitForFunction(() => document.querySelector('#sendButton:not([disabled])') !== null || document.querySelector('.message.bot') !== null, { timeout: 5000 });
+    await page.waitForFunction(() => document.querySelector('.message.bot') !== null, { timeout: 5000 });
 
     await page.unrouteAll({ behavior: "ignoreErrors" });
   });
@@ -465,7 +471,7 @@ test.describe("Empty States", () => {
     await expect(page.locator(".summary")).toBeVisible();
   });
 
-  test("shows shortcuts bar even when no messages", async ({ page }) => {
+  test("hides shortcuts bar when there are no messages", async ({ page }) => {
     await page.route("**/api/auth/me", (route) =>
       route.fulfill({
         contentType: "application/json",
@@ -484,8 +490,7 @@ test.describe("Empty States", () => {
 
     await page.goto("/");
 
-    await expect(page.locator(".shortcuts-bar")).toBeVisible();
-    await expect(page.locator(".shortcuts-bar-item")).toHaveCount(6);
+    await expect(page.locator(".shortcuts-bar")).toHaveCount(0);
   });
 });
 
@@ -517,6 +522,9 @@ test.describe("Mobile Specific", () => {
     });
 
     await page.goto("/");
+
+    await page.locator("#shortcut-salario-minimo").click();
+    await expect(page.locator(".message.user")).toBeVisible();
 
     const shortcutsBar = page.locator(".shortcuts-bar");
     await expect(shortcutsBar).toBeVisible();
@@ -733,7 +741,7 @@ test.describe("Data & Privacy Settings", () => {
     await exportButton.click();
 
     const download = await downloadPromise;
-    expect(download.suggestedFilename()).toContain("bot-financeiro-dados");
+    expect(download.suggestedFilename()).toContain("vestora-dados");
     expect(download.suggestedFilename()).toMatch(/.*\.json$/);
   });
 });

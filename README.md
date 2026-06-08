@@ -1,15 +1,16 @@
-# Bot Financeiro
+# Vestora
 
-Chatbot web/PWA de educação financeira e mercado imobiliário com React, Node.js, Groq e histórico de conversas.
+Vestora é uma plataforma web/PWA de educação financeira e inteligência financeira pessoal. O produto combina interface premium, pesquisa web em tempo real, histórico de conversas e uma experiência visual inspirada em fintechs modernas.
 
 ## Funcionalidades
 
-- 💬 **Chat com IA** - Tire dúvidas sobre finanças, investimentos, imóveis e planejamento
-- 📊 **Atalhos Rápidos** - Salário mínimo, dólar, Selic, FGTS, tabela IR, Bitcoin
+- 💬 **Assistente financeiro com IA** - Tire dúvidas sobre patrimônio, crédito, investimentos, mercado e planejamento
+- 📊 **Consultas rápidas** - Salário mínimo, dólar, Selic, FGTS, tabela IR e Bitcoin
 - 🎤 **Entrada de Voz** - Fale em português brasileiro para fazer perguntas
-- 🌙 **Tema Escuro/Light** - Troque entre modos claro e escuro
+- 🌙 **Visual fintech premium** - Tema escuro elegante com painéis glassmorphism e microinterações suaves
+- 🌍 **Pesquisa web automática** - Busca online em tempo real quando a pergunta exige dados atuais
 - 📱 **PWA** - Instale no celular como app nativo
-- 🔒 **Seguro** - Headers de segurança, rate limiting, proteção contra XSS
+- 🔒 **Seguro** - Headers de segurança, rate limiting e proteção contra pedidos sensíveis
 - 🌍 **Multilingue** - Português, English, Español
 - 💾 **Histórico** - Salve conversas localmente ou na nuvem (Supabase)
 - 🔄 **Offline** - Funciona mesmo sem internet (PWA)
@@ -20,8 +21,9 @@ Chatbot web/PWA de educação financeira e mercado imobiliário com React, Node.
 - **Frontend**: React 19 + Vite
 - **Backend**: Express.js
 - **IA**: Groq API (Llama model)
+- **Busca Web**: Camada própria com classificação temporal, cache e fallback entre provedores
 - **Banco**: Supabase (opcional)
-- **Testes**: Playwright
+- **Testes**: Playwright + `node:test`
 
 ## Rodar Localmente
 
@@ -97,6 +99,13 @@ npx playwright test tests/button-functions.spec.js
 npx playwright test tests/e2e-flows.spec.js
 ```
 
+Execute os testes dedicados da busca web:
+
+```bash
+npm run test:web-search
+RUN_WEB_LIVE_TESTS=1 npm run test:web-search
+```
+
 ## Segurança
 
 - Nunca suba o arquivo `.env` para o GitHub
@@ -107,7 +116,7 @@ npx playwright test tests/e2e-flows.spec.js
 ## Estrutura do Projeto
 
 ```
-bot-financeiro/
+vestora/
 ├── src/
 │   ├── App.jsx      # Componente principal
 │   ├── main.jsx      # Entry point React
@@ -120,7 +129,8 @@ bot-financeiro/
 │   └── index.js      # Rotas da API
 ├── groq.js           # Integração Groq
 ├── supabase.js       # Cliente Supabase
-├── prompts.js        # Prompts do sistema
+├── prompts.js        # Identidade e instruções da IA Vestora
+├── internetSearch.js # Busca web robusta com cache, timeout e fallback
 └── tests/            # Testes Playwright
 ```
 

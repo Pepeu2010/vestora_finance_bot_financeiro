@@ -145,7 +145,7 @@ test.describe("Segurança - Autenticação e Sessão", () => {
 
   test("com cookie inválido, endpoint retorna 401", async ({ request }) => {
     const response = await request.get("/api/conversations", {
-      headers: { Cookie: "bot_financeiro_session=invalid.token.here" }
+      headers: { Cookie: "vestora_session=invalid.token.here" }
     });
     expect([401, 403, 429]).toContain(response.status());
   });

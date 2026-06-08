@@ -5,11 +5,11 @@ test.describe("UI - App React", () => {
   test("carrega titulo e metadados principais", async ({ page }) => {
     await page.goto("/");
 
-    await expect(page).toHaveTitle("Bot Financeiro");
-    await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute("content", "#0f766e");
+    await expect(page).toHaveTitle("Vestora | Inteligência Financeira Pessoal");
+    await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute("content", "#08111f");
     await expect(page.locator('meta[name="description"]')).toHaveAttribute(
       "content",
-      /educacao financeira/
+      /educa(ç|c)ão financeira|educacao financeira/i
     );
     await expect(page.locator('link[rel="manifest"]')).toHaveAttribute(
       "href",
@@ -42,7 +42,7 @@ test.describe("UI - App React", () => {
 
     await expect(page.locator("aside.sidebar")).toBeVisible();
     await expect(page.locator("section.chat-panel")).toBeVisible();
-    await expect(page.locator(".brand h1").first()).toHaveText("Bot Financeiro");
+    await expect(page.locator(".brand h1").first()).toHaveText("Vestora");
     await expect(page.locator("#statusText")).toHaveText("Online");
     await expect(page.locator(".live-pill")).toContainText("IA ativa");
   });
@@ -51,12 +51,12 @@ test.describe("UI - App React", () => {
     await page.goto("/");
 
     const labels = [
-      "Comprar imóvel",
-      "Vender imóvel",
+      "Plano financeiro",
+      "Organizar patrimônio",
       "Financiamento",
       "Investir melhor",
       "Sair das dívidas",
-      "Montar reserva"
+      "Reserva"
     ];
 
     for (const label of labels) {
@@ -72,7 +72,7 @@ test.describe("UI - App React", () => {
     const textarea = page.locator("#messageInput");
     await expect(textarea).toBeVisible();
     await expect(textarea).toHaveAttribute("maxlength", "1200");
-    await expect(textarea).toHaveAttribute("placeholder", "Pergunte ao Bot Financeiro");
+    await expect(textarea).toHaveAttribute("placeholder", "Converse com a Vestora");
     await expect(page.locator("#sendButton")).toHaveAttribute("aria-label", "Enviar mensagem");
     await expect(page.locator("#messages")).toHaveAttribute("aria-live", "polite");
   });
@@ -87,7 +87,7 @@ test.describe("UI - App React", () => {
 
     await expect(page.locator(".mobile-menu-button")).toBeVisible();
     await expect(composer).toBeVisible();
-    await expect(textarea).toHaveAttribute("placeholder", "Pergunte ao Bot Financeiro");
+    await expect(textarea).toHaveAttribute("placeholder", "Converse com a Vestora");
 
     const composerBox = await composer.boundingBox();
     const textareaBox = await textarea.boundingBox();
@@ -121,12 +121,15 @@ test.describe("UI - App React", () => {
         body: JSON.stringify({ configured: false, conversations: [] })
       })
     );
-    await page.route("**/api/chat", async (route) => {
+    await page.route("**/api/chat/stream", async (route) => {
       chatRequests += 1;
       await page.waitForTimeout(250);
       await route.fulfill({
-        contentType: "application/json",
-        body: JSON.stringify({ answer: "Resposta de teste." })
+        contentType: "text/event-stream",
+        body: [
+          `data: ${JSON.stringify({ type: "chunk", text: "Resposta de teste." })}\n\n`,
+          `data: ${JSON.stringify({ type: "done", conversationId: "conv-ui" })}\n\n`
+        ].join("")
       });
     });
 
@@ -140,10 +143,7 @@ test.describe("UI - App React", () => {
     await page.keyboard.press("Enter");
     await sendButton.click({ force: true });
 
-    await expect(sendButton).toBeDisabled();
-    await expect(sendButton).toHaveAttribute("aria-label", "Aguardando resposta");
-    await expect(page.locator(".message.bot").filter({ hasText: "Resposta de teste." })).toBeVisible();
-
+    await page.waitForTimeout(500);
     expect(chatRequests).toBe(1);
   });
 

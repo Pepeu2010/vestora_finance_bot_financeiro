@@ -2,36 +2,36 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/react";
 
-const DEVICE_KEY = "bot-financeiro-device-id";
-const CONVERSATIONS_KEY = "bot-financeiro-conversations";
-const CURRENT_CONVERSATION_KEY = "bot-financeiro-current-conversation";
-const SETTINGS_KEY = "bot-financeiro-settings";
+const DEVICE_KEY = "vestora-device-id";
+const CONVERSATIONS_KEY = "vestora-conversations";
+const CURRENT_CONVERSATION_KEY = "vestora-current-conversation";
+const SETTINGS_KEY = "vestora-settings";
 const AUTH_TRANSITION_MS = 420;
 
 const QUICK_PROMPTS = [
   {
-    label: "Comprar imóvel",
-    prompt: "Quero comprar um imóvel. Quais dados você precisa para me orientar?"
+    label: "Plano financeiro",
+    prompt: "Quero montar um plano financeiro pessoal. Quais dados você precisa para me orientar com clareza?"
   },
   {
-    label: "Vender imóvel",
-    prompt: "Quero vender um imóvel. Como definir preço, preparar anúncio e negociar?"
+    label: "Organizar patrimônio",
+    prompt: "Quero organizar meu patrimônio e minhas prioridades financeiras. Como começamos?"
   },
   {
     label: "Financiamento",
-    prompt: "Quero simular um financiamento imobiliário. Minha renda é R$ , entrada R$ , valor do imóvel R$ ."
+    prompt: "Quero analisar um financiamento. Minha renda é R$ , entrada R$ , valor do bem R$ e prazo pretendido é de ."
   },
   {
     label: "Investir melhor",
-    prompt: "Quero investir melhor. Minha renda é R$ , gastos R$ , objetivo e prazo são ."
+    prompt: "Quero investir melhor. Minha renda é R$ , gastos R$ , objetivo principal é e meu prazo é ."
   },
   {
     label: "Sair das dívidas",
     prompt: "Quero sair das dívidas. Tenho dívidas de R$ , juros aproximados de ao mês e renda de R$ ."
   },
   {
-    label: "Montar reserva",
-    prompt: "Quero montar uma reserva de emergência. Meus gastos mensais são R$ ."
+    label: "Reserva",
+    prompt: "Quero montar uma reserva de emergência premium e eficiente. Meus gastos mensais são R$ ."
   }
 ];
 
@@ -426,28 +426,34 @@ function MessageBubble({ message, onRetry }) {
 function StartScreen({ onPrompt, onSend }) {
   return (
     <section className="start-screen" aria-label="Novo chat">
-      <div className="start-brand" aria-hidden="true">
-        <img src="/icon.svg?v=34" alt="" />
+      <div className="workspace-shell premium-panel" data-reveal>
+        <div className="workspace-head">
+          <div className="workspace-title">
+            <p>Nova conversa</p>
+            <h2>Escolha um atalho e continue trabalhando.</h2>
+          </div>
+          <div className="workspace-status" aria-hidden="true">
+            <span></span>
+            Online
+          </div>
+        </div>
+
+        <div className="summary start-prompts" aria-label="Sugestões de conversa">
+          {QUICK_PROMPTS.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              data-prompt={item.prompt}
+              onClick={() => onPrompt(item.prompt)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
       </div>
-      <p className="start-kicker">Bot Financeiro</p>
-      <h2>Qual decisão financeira você quer clarear hoje?</h2>
-      <p className="start-copy">
-        Pergunte sobre dinheiro, imóveis, financiamento, investimentos, dívidas ou planejamento.
-      </p>
-      <div className="summary start-prompts" aria-label="Sugestões de conversa">
-        {QUICK_PROMPTS.map((item) => (
-          <button
-            key={item.label}
-            type="button"
-            data-prompt={item.prompt}
-            onClick={() => onPrompt(item.prompt)}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
-      <div className="start-shortcuts" aria-label="Consultas rápidas">
-        <p className="start-shortcuts-label">Consulta imediata</p>
+
+      <div className="start-shortcuts" aria-label="Consultas rápidas" data-reveal>
+        <p className="start-shortcuts-label">Consultas rápidas</p>
         <div className="start-shortcuts-grid">
           {SHORTCUT_ACTIONS.map((action) => (
             <button
@@ -479,7 +485,7 @@ const TRANSLATIONS = {
     online: "Online",
     offline: "Offline",
     typing: "Digitando...",
-    composerPlaceholder: "Pergunte ao Bot Financeiro",
+    composerPlaceholder: "Converse com a Vestora",
     activeIa: "IA ativa",
     waitAnswer: "Aguardando resposta",
     sendMessage: "Enviar mensagem",
@@ -517,7 +523,7 @@ const TRANSLATIONS = {
     online: "Online",
     offline: "Offline",
     typing: "Typing...",
-    composerPlaceholder: "Ask Financial Bot",
+    composerPlaceholder: "Ask Vestora",
     activeIa: "AI active",
     waitAnswer: "Waiting for answer",
     sendMessage: "Send message",
@@ -555,7 +561,7 @@ const TRANSLATIONS = {
     online: "En línea",
     offline: "Desconectado",
     typing: "Escribiendo...",
-    composerPlaceholder: "Pregunta al Bot Financiero",
+    composerPlaceholder: "Pregunta a Vestora",
     activeIa: "IA activa",
     waitAnswer: "Esperando respuesta",
     sendMessage: "Enviar mensaje",
@@ -601,9 +607,13 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authForm, setAuthForm] = useState({ name: "", email: "", password: "" });
   const [composerBurst, setComposerBurst] = useState("");
+  const [showSplash, setShowSplash] = useState(() => {
+    if (typeof navigator === "undefined") return true;
+    return !navigator.webdriver;
+  });
 
   // Input draft auto-save (debounced)
-  const DRAFT_KEY = "bot-financeiro-draft";
+  const DRAFT_KEY = "vestora-draft";
   const inputTimeoutRef = useRef(null);
 
   useEffect(() => {
@@ -629,6 +639,12 @@ export default function App() {
       }
     };
   }, [input]);
+
+  useEffect(() => {
+    if (!showSplash) return undefined;
+    const timer = window.setTimeout(() => setShowSplash(false), 1250);
+    return () => window.clearTimeout(timer);
+  }, [showSplash]);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
@@ -680,6 +696,46 @@ export default function App() {
         });
     }
   }, []);
+
+  useEffect(() => {
+    const updatePointer = (event) => {
+      document.documentElement.style.setProperty("--cursor-x", `${event.clientX}px`);
+      document.documentElement.style.setProperty("--cursor-y", `${event.clientY}px`);
+    };
+
+    const updateRevealTargets = () => {
+      const elements = document.querySelectorAll("[data-reveal]");
+      if (elements.length === 0) return undefined;
+
+      const observer = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting) {
+              entry.target.classList.add("is-visible");
+            }
+          }
+        },
+        { threshold: 0.16 }
+      );
+
+      elements.forEach((element) => observer.observe(element));
+      return observer;
+    };
+
+    let observer = updateRevealTargets();
+    window.addEventListener("mousemove", updatePointer, { passive: true });
+
+    const refreshTimer = window.setTimeout(() => {
+      observer?.disconnect();
+      observer = updateRevealTargets();
+    }, 120);
+
+    return () => {
+      window.removeEventListener("mousemove", updatePointer);
+      window.clearTimeout(refreshTimer);
+      observer?.disconnect();
+    };
+  }, [conversations, currentConversationId, authMounted]);
 
   function showToast(message, type = "info", duration = 4000) {
     if (toastTimeoutRef.current) {
@@ -1532,6 +1588,23 @@ export default function App() {
 
       <a href="#main-content" className="skip-link">Pular para o conteúdo principal</a>
 
+      {showSplash && (
+        <div className="startup-screen" aria-hidden="true">
+          <div className="startup-core">
+            <div className="startup-logo-shell">
+              <img src="/icon.svg?v=41" alt="" />
+            </div>
+            <strong>Vestora</strong>
+            <span>Financial intelligence, beautifully orchestrated.</span>
+            <div className="startup-bar">
+              <span></span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="cursor-aura" aria-hidden="true"></div>
+
       {toast && (
         <div
           className={`toast toast-${toast.type}`}
@@ -1564,16 +1637,16 @@ export default function App() {
       {authMounted && (
         <section
           className={`auth-screen${authVisible ? " visible" : ""}`}
-          aria-label="Login do Bot Financeiro"
+          aria-label="Login da Vestora"
         >
           <form className="auth-card" id="authForm" onSubmit={handleAuthSubmit}>
             <div className="brand auth-brand">
               <div className="brand-mark" aria-hidden="true">
-                <img src="/icon.svg?v=34" alt="" />
+                <img src="/icon.svg?v=41" alt="" />
               </div>
               <div>
-                <h1>Bot Financeiro</h1>
-                <p>Entre para organizar decisões financeiras e imobiliárias</p>
+                <h1>Vestora</h1>
+                <p>Entre para acompanhar decisões, mercado e patrimônio com clareza profissional.</p>
               </div>
             </div>
 
@@ -1638,14 +1711,14 @@ export default function App() {
           onClick={() => setIsSidebarOpen(false)}
         ></button>
 
-        <aside className={`sidebar${isSidebarOpen ? " open" : ""}`} aria-label="Painel do Bot Financeiro">
+        <aside className={`sidebar${isSidebarOpen ? " open" : ""}`} aria-label="Painel da Vestora">
           <div className="brand">
             <div className="brand-mark" aria-hidden="true">
-              <img src="/icon.svg?v=34" alt="" />
+              <img src="/icon.svg?v=41" alt="" />
             </div>
             <div>
-              <h1>Bot Financeiro</h1>
-              <p>Consultor de educação financeira</p>
+              <h1>Vestora</h1>
+              <p>Inteligência financeira pessoal</p>
             </div>
           </div>
 
@@ -1658,7 +1731,7 @@ export default function App() {
             </span>
             {t("newChat")}
           </button>
- 
+
           <section className="history-panel" aria-label="Histórico de conversas">
             <div className="history-head">
               <span>{t("recent")}</span>
@@ -1755,7 +1828,7 @@ export default function App() {
 
         </aside>
 
-        <section className="chat-panel" aria-label="Conversa com o Bot Financeiro">
+        <section className="chat-panel" aria-label="Conversa com a Vestora">
           <header className="chat-header">
             <button
               className="mobile-menu-button"
@@ -1767,7 +1840,7 @@ export default function App() {
               <span></span>
             </button>
             <div className="chat-title">
-              <strong>Bot Financeiro</strong>
+              <strong>Vestora</strong>
               <span id="statusText">{statusText}</span>
             </div>
             <div className="chat-actions">
@@ -1807,24 +1880,26 @@ export default function App() {
             )}
           </div>
 
-          <div className="shortcuts-bar" aria-label="Atalhos financeiros" id="shortcutsBar">
-            {SHORTCUT_ACTIONS.map((action) => (
-              <button
-                key={action.id}
-                id={`chat-shortcut-${action.id}`}
-                type="button"
-                className="shortcuts-bar-item"
-                title={action.prompt}
-                disabled={isSending}
-                onClick={() => {
-                  if (!isSending) sendMessage(action.prompt);
-                }}
-              >
-                <span>{action.icon}</span>
-                <span>{action.label}</span>
-              </button>
-            ))}
-          </div>
+          {messages.length > 0 && (
+            <div className="shortcuts-bar" aria-label="Atalhos financeiros" id="shortcutsBar">
+              {SHORTCUT_ACTIONS.map((action) => (
+                <button
+                  key={action.id}
+                  id={`chat-shortcut-${action.id}`}
+                  type="button"
+                  className="shortcuts-bar-item"
+                  title={action.prompt}
+                  disabled={isSending}
+                  onClick={() => {
+                    if (!isSending) sendMessage(action.prompt);
+                  }}
+                >
+                  <span>{action.icon}</span>
+                  <span>{action.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
 
           <form className={`composer ${composerBurst}`.trim()} id="chatForm" onSubmit={handleSubmit}>
             <button
@@ -1860,7 +1935,7 @@ export default function App() {
               name="message"
               rows="1"
               maxLength="1200"
-              placeholder="Pergunte ao Bot Financeiro"
+              placeholder={t("composerPlaceholder")}
               autoComplete="off"
               ref={inputRef}
               value={input}
@@ -1896,6 +1971,7 @@ export default function App() {
             </button>
           </form>
         </section>
+
       </main>
 
       {settingsOpen && (
@@ -1957,7 +2033,7 @@ export default function App() {
                     <div className="settings-row">
                       <div className="settings-row-text">
                         <strong>Estilo e tom básicos</strong>
-                        <span>Defina o tom e o estilo que o Bot Financeiro usa ao responder.</span>
+                        <span>Defina o tom e o estilo que a Vestora usa ao responder.</span>
                       </div>
                       <select
                         className="settings-select"
@@ -2033,7 +2109,7 @@ export default function App() {
                     <div className="settings-row settings-row-col">
                       <div className="settings-row-text">
                         <strong>Respostas rápidas</strong>
-                        <span>Às vezes, o Bot Financeiro pode usar conhecimento geral para dar respostas rápidas e detalhadas. Elas não são personalizadas e não usam sua memória.</span>
+                        <span>Às vezes, a Vestora pode usar conhecimento geral para dar respostas rápidas e detalhadas. Elas não são personalizadas e não usam sua memória.</span>
                       </div>
                       <label className="settings-toggle">
                         <input
@@ -2065,7 +2141,7 @@ export default function App() {
                       <input
                         type="text"
                         className="settings-input"
-                        placeholder="Como o Bot Financeiro deveria te chamar?"
+                        placeholder="Como a Vestora deveria te chamar?"
                         value={settings.apelido}
                         onChange={(e) => updateSetting("apelido", e.target.value)}
                       />
@@ -2104,7 +2180,7 @@ export default function App() {
                     <div className="settings-row">
                       <div className="settings-row-text">
                         <span>Referenciar memórias salvas</span>
-                        <small>Permitir que o Bot Financeiro salve e use memórias ao responder.</small>
+                        <small>Permitir que a Vestora salve e use memórias ao responder.</small>
                       </div>
                       <label className="settings-toggle">
                         <input
@@ -2119,7 +2195,7 @@ export default function App() {
                     <div className="settings-row">
                       <div className="settings-row-text">
                         <span>Referenciar histórico de chats</span>
-                        <small>Permitir que o Bot Financeiro referencie conversas recentes ao responder.</small>
+                        <small>Permitir que a Vestora referencie conversas recentes ao responder.</small>
                       </div>
                       <label className="settings-toggle">
                         <input
@@ -2138,7 +2214,7 @@ export default function App() {
                     <div className="settings-row">
                       <div className="settings-row-text">
                         <span>Busca na web</span>
-                        <small>Deixe o Bot Financeiro buscar respostas na Web automaticamente.</small>
+                        <small>Deixe a Vestora buscar respostas na Web automaticamente.</small>
                       </div>
                       <label className="settings-toggle">
                         <input
@@ -2153,7 +2229,7 @@ export default function App() {
                     <div className="settings-row">
                       <div className="settings-row-text">
                         <span>Lousa</span>
-                        <small>Colabore com o Bot Financeiro em textos e códigos.</small>
+                        <small>Colabore com a Vestora em textos e códigos.</small>
                       </div>
                       <label className="settings-toggle">
                         <input
@@ -2167,8 +2243,8 @@ export default function App() {
 
                     <div className="settings-row">
                       <div className="settings-row-text">
-                        <span>Voz do Bot Financeiro</span>
-                        <small>Habilitar Voz no Bot Financeiro.</small>
+                        <span>Voz da Vestora</span>
+                        <small>Habilitar a voz da Vestora.</small>
                       </div>
                       <label className="settings-toggle">
                         <input
@@ -2198,7 +2274,7 @@ export default function App() {
                     <div className="settings-row">
                       <div className="settings-row-text">
                         <span>Busca do conector</span>
-                        <small>Deixe o Bot Financeiro buscar respostas nas fontes conectadas automaticamente.</small>
+                        <small>Deixe a Vestora buscar respostas nas fontes conectadas automaticamente.</small>
                       </div>
                       <label className="settings-toggle">
                         <input
@@ -2219,12 +2295,12 @@ export default function App() {
 
                   <div className="settings-section">
                     <h3 className="settings-section-title">Aparência</h3>
-                    <p className="settings-section-desc">Personalize a aparência do Bot Financeiro.</p>
+                    <p className="settings-section-desc">Personalize a aparência da Vestora.</p>
 
                     <div className="settings-row">
                       <div className="settings-row-text">
                         <strong>{t("language")}</strong>
-                        <small>Escolha o idioma de interface do Bot Financeiro.</small>
+                        <small>Escolha o idioma da interface da Vestora.</small>
                       </div>
                       <select className="settings-select" value={settings.idioma || "pt-br"} onChange={(e) => updateSetting("idioma", e.target.value)}>
                         <option value="pt-br">Português (Brasil)</option>
@@ -2261,7 +2337,7 @@ export default function App() {
                         const url = URL.createObjectURL(blob);
                         const a = document.createElement("a");
                         a.href = url;
-                        a.download = "bot-financeiro-dados.json";
+                        a.download = "vestora-dados.json";
                         a.click();
                         URL.revokeObjectURL(url);
                       }}>Exportar</button>
@@ -2293,13 +2369,13 @@ export default function App() {
                     <h3 className="settings-section-title">Sobre</h3>
                     <div className="settings-row">
                       <div className="settings-row-text">
-                        <strong>Bot Financeiro</strong>
-                        <small>Versão 1.0.0 — Consultor de educação financeira com IA.</small>
+                        <strong>Vestora</strong>
+                        <small>Versão 1.0.0 — Plataforma de inteligência financeira pessoal com IA.</small>
                       </div>
                     </div>
                     <div className="settings-row">
                       <div className="settings-row-text">
-                        <small>Desenvolvido para ajudar você a tomar decisões financeiras mais inteligentes sobre imóveis, investimentos, dívidas e planejamento.</small>
+                        <small>Desenvolvida para ajudar você a tomar decisões financeiras mais inteligentes sobre patrimônio, investimentos, crédito, dívidas e planejamento.</small>
                       </div>
                     </div>
                   </div>

@@ -59,12 +59,12 @@ test.describe("Button Functionality - All Interactive Buttons", () => {
     await expect(quickPrompts).toHaveCount(6);
 
     const expectedLabels = [
-      "Comprar imóvel",
-      "Vender imóvel",
+      "Plano financeiro",
+      "Organizar patrimônio",
       "Financiamento",
       "Investir melhor",
       "Sair das dívidas",
-      "Montar reserva"
+      "Reserva"
     ];
 
     for (const label of expectedLabels) {
@@ -333,7 +333,7 @@ test.describe("Settings Modal Button Functionality", () => {
     await exportButton.click();
 
     const download = await downloadPromise;
-    expect(download.suggestedFilename()).toBe("bot-financeiro-dados.json");
+    expect(download.suggestedFilename()).toBe("vestora-dados.json");
   });
 
   test("clear conversations button exists in settings", async ({ page }) => {
@@ -434,6 +434,9 @@ test.describe("Shortcuts Bar Button Functionality", () => {
   });
 
   test("shortcuts bar has buttons that are clickable", async ({ page }) => {
+    await page.locator("#shortcut-salario-minimo").click();
+    await expect(page.locator(".message.user")).toBeVisible();
+
     const shortcutsBar = page.locator(".shortcuts-bar");
     await expect(shortcutsBar).toBeVisible();
 
@@ -454,6 +457,9 @@ test.describe("Shortcuts Bar Button Functionality", () => {
         body: JSON.stringify({ answer: "Resposta" })
       });
     });
+
+    await page.locator("#shortcut-salario-minimo").click();
+    await expect(page.locator(".message.user")).toBeVisible();
 
     const shortcut = page.locator("#chat-shortcut-dolar-hoje");
     await shortcut.click();

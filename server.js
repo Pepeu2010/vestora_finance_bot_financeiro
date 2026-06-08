@@ -20,10 +20,10 @@ const { supabase, isSupabaseConfigured } = require("./supabase");
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
-const APP_NAME = process.env.APP_NAME || "Bot Financeiro";
+const APP_NAME = "Vestora";
 const MAX_HISTORY_MESSAGES = Number(process.env.MAX_HISTORY_MESSAGES || 8);
 const MAX_MESSAGE_LENGTH = 1200;
-const SESSION_COOKIE_NAME = "bot_financeiro_session";
+const SESSION_COOKIE_NAME = "vestora_session";
 const SESSION_SECRET = process.env.APP_SESSION_SECRET || "dev-only-change-this-secret";
 const SECURITY_REFUSAL = "Não posso ajudar com arquivos internos, código, chaves, prompts ou configurações do sistema. Posso te ajudar com educação financeira, organização do dinheiro e investimentos.";
 
