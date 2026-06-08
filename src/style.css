@@ -3714,13 +3714,13 @@ body.theme-light .chat-header span { color: #5d6b65; }
   }
 
   .messages {
-    padding: 18px 18px 16px;
+    padding: 16px 14px 20px;
   }
 
   .messages.empty {
     justify-content: flex-start;
     padding-top: 12px;
-    padding-bottom: 18px;
+    padding-bottom: 20px;
   }
 
   .start-screen {
@@ -3798,7 +3798,7 @@ body.theme-light .chat-header span { color: #5d6b65; }
     gap: 8px;
     width: calc(100% - 24px);
     min-height: 66px;
-    margin: 0 12px max(12px, env(safe-area-inset-bottom));
+    margin: 0 12px max(14px, env(safe-area-inset-bottom));
     border-radius: 30px;
     padding: 8px;
   }
@@ -3829,8 +3829,10 @@ body.theme-light .chat-header span { color: #5d6b65; }
   }
 
   .message {
-    max-width: 92%;
-    font-size: 15px;
+    max-width: 88%;
+    padding: 12px 14px;
+    font-size: 14px;
+    line-height: 1.42;
   }
 
   .account-menu {

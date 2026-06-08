@@ -9,6 +9,7 @@ const cookieParser = require("cookie-parser");
 const fs = require("fs");
 const path = require("path");
 const { askGroq, askGroqStream } = require("./groq");
+const { sanitizeModelAnswer } = require("./answerSanitizer");
 const { getOfficialFactsForMessage } = require("./officialFacts");
 const {
   pesquisarInternet,
@@ -259,6 +260,10 @@ function validateDeviceId(deviceId) {
   return /^[a-zA-Z0-9_-]{12,120}$/.test(value) ? value : "";
 }
 
+function finalizeAnswer(answer) {
+  return sanitizeModelAnswer(answer) || "Nao consegui responder agora. Pode tentar reformular sua pergunta?";
+}
+
 function makeTitle(text) {
   const clean = String(text || "")
     .replace(/\s+/g, " ")
@@ -393,18 +398,20 @@ function tryQuickCalculator(text, session, officialFacts) {
   }
 
   if (macroFacts?.facts && (normalized.includes("selic") || normalized.includes("ipca") || normalized.includes("cdi"))) {
-    const lines = ["Conferi os dados do Banco Central antes de responder:"];
+    const lines = [
+      `Atualizado agora com dados do Banco Central. Consulta: ${new Date(macroFacts.checkedAt || Date.now()).toLocaleString("pt-BR")}.`
+    ];
 
     if (normalized.includes("selic") && macroFacts.facts.selicMeta) {
-      lines.push(`- **Selic meta:** ${macroFacts.facts.selicMeta.value} (referencia ${macroFacts.facts.selicMeta.date}).`);
+      lines.push(`- **Selic meta:** ${macroFacts.facts.selicMeta.value} (referencia ${macroFacts.facts.selicMeta.date}; fonte: ${macroFacts.facts.selicMeta.source}).`);
     }
 
     if ((normalized.includes("ipca") || normalized.includes("inflacao")) && macroFacts.facts.ipca) {
-      lines.push(`- **IPCA:** ultimo mes ${macroFacts.facts.ipca.latestMonthly} (${macroFacts.facts.ipca.latestMonth}); acumulado aproximado em 12 meses ${macroFacts.facts.ipca.accumulated12mApprox}.`);
+      lines.push(`- **IPCA:** ultimo mes ${macroFacts.facts.ipca.latestMonthly} (${macroFacts.facts.ipca.latestMonth}); acumulado aproximado em 12 meses ${macroFacts.facts.ipca.accumulated12mApprox}; fonte: ${macroFacts.facts.ipca.source}.`);
     }
 
     if (normalized.includes("cdi") && macroFacts.facts.cdi) {
-      lines.push(`- **CDI:** ultimo dado diario ${macroFacts.facts.cdi.latestDaily} (${macroFacts.facts.cdi.latestDate}); anualizado aproximado ${macroFacts.facts.cdi.annualizedApprox}.`);
+      lines.push(`- **CDI:** ultimo dado diario ${macroFacts.facts.cdi.latestDaily} (${macroFacts.facts.cdi.latestDate}); anualizado aproximado ${macroFacts.facts.cdi.annualizedApprox}; fonte: ${macroFacts.facts.cdi.source}.`);
     }
 
     lines.push("Esses indicadores mudam. Para aplicar dinheiro hoje, confirme a taxa no banco/corretora e veja liquidez, IR, IOF e risco.");
@@ -1083,6 +1090,7 @@ async function prepareChatRequest(req, res) {
   );
 
   // Run searches in parallel
+  const shouldAttemptWebSearch = (mustUseWebSearch || freshness.shouldSearch) && userSettings.buscaNaWeb !== false;
   const searchPromises = [];
   searchPromises.push(
     userSettings.buscaConector !== false
@@ -1090,7 +1098,7 @@ async function prepareChatRequest(req, res) {
       : Promise.resolve(null)
   );
   searchPromises.push(
-    (mustUseWebSearch || userSettings.buscaNaWeb !== false)
+    shouldAttemptWebSearch
       ? pesquisarInternet(userMessage, {
           classification: freshness,
           force: mustUseWebSearch
@@ -1135,23 +1143,24 @@ app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
     if (userSettings.respostasRapidas !== false) {
       const quickAnswer = tryQuickCalculator(userMessage, session, officialFacts);
       if (quickAnswer) {
+        const safeAnswer = finalizeAnswer(quickAnswer);
         addToHistory(session, "user", userMessage);
-        addToHistory(session, "model", quickAnswer);
-        await saveCloudMessage({ conversationId, role: "model", content: quickAnswer });
+        addToHistory(session, "model", safeAnswer);
+        await saveCloudMessage({ conversationId, role: "model", content: safeAnswer });
         console.log(`[${now()}] [${session.id}] Resposta por calculadora simples.`);
 
-        return res.json({ sessionId: session.id, conversationId, answer: quickAnswer });
+        return res.json({ sessionId: session.id, conversationId, answer: safeAnswer });
       }
     }
 
-    const answer = await askGroq({
+    const answer = finalizeAnswer(await askGroq({
       message: userMessage,
       history: historyForGroq,
       profileSummary: userSettings.referenciarMemorias !== false ? getProfileSummary(session) : "",
       userPreferences,
       officialFacts,
       internetResults: enrichedInternetResults
-    });
+    }));
 
     addToHistory(session, "user", userMessage);
     addToHistory(session, "model", answer);
@@ -1179,9 +1188,10 @@ app.post("/api/chat/stream", requireAuth, chatLimiter, async (req, res) => {
     if (userSettings.respostasRapidas !== false) {
       const quickAnswer = tryQuickCalculator(userMessage, session, officialFacts);
       if (quickAnswer) {
+        const safeAnswer = finalizeAnswer(quickAnswer);
         addToHistory(session, "user", userMessage);
-        addToHistory(session, "model", quickAnswer);
-        await saveCloudMessage({ conversationId, role: "model", content: quickAnswer });
+        addToHistory(session, "model", safeAnswer);
+        await saveCloudMessage({ conversationId, role: "model", content: safeAnswer });
         console.log(`[${now()}] [${session.id}] Resposta por calculadora simples (stream).`);
 
         // Send as a single chunk
@@ -1191,7 +1201,7 @@ app.post("/api/chat/stream", requireAuth, chatLimiter, async (req, res) => {
         res.setHeader("X-Accel-Buffering", "no");
         res.flushHeaders();
 
-        res.write(`data: ${JSON.stringify({ type: "chunk", text: quickAnswer })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: "chunk", text: safeAnswer })}\n\n`);
         res.write(`data: ${JSON.stringify({ type: "done", conversationId })}\n\n`);
         res.end();
         return;
@@ -1206,7 +1216,8 @@ app.post("/api/chat/stream", requireAuth, chatLimiter, async (req, res) => {
     res.flushHeaders();
 
     // Stream the answer
-    let fullAnswer = "";
+    let rawAnswer = "";
+    let emittedLength = 0;
     const stream = askGroqStream({
       message: userMessage,
       history: historyForGroq,
@@ -1217,9 +1228,16 @@ app.post("/api/chat/stream", requireAuth, chatLimiter, async (req, res) => {
     });
 
     for await (const chunk of stream) {
-      fullAnswer += chunk;
-      res.write(`data: ${JSON.stringify({ type: "chunk", text: chunk })}\n\n`);
+      rawAnswer += chunk;
+      const safeAnswer = finalizeAnswer(rawAnswer);
+      const delta = safeAnswer.slice(emittedLength);
+      emittedLength = safeAnswer.length;
+      if (delta) {
+        res.write(`data: ${JSON.stringify({ type: "chunk", text: delta })}\n\n`);
+      }
     }
+
+    const fullAnswer = finalizeAnswer(rawAnswer);
 
     // Save complete answer to DB and history
     addToHistory(session, "user", userMessage);

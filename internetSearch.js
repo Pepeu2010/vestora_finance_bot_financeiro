@@ -5,6 +5,13 @@ const REALTIME_TIMEOUT_MS = 6000;
 const MAX_RESULTS = 8;
 const MAX_PAGE_SNIPPETS = 3;
 const MAX_QUERIES = 4;
+const TAVILY_API_KEY = process.env.TAVILY_API_KEY || "";
+const SERPER_API_KEY = process.env.SERPER_API_KEY || "";
+const BRAVE_SEARCH_API_KEY = process.env.BRAVE_SEARCH_API_KEY || "";
+const GOOGLE_CSE_API_KEY = process.env.GOOGLE_CSE_API_KEY || "";
+const GOOGLE_CSE_CX = process.env.GOOGLE_CSE_CX || "";
+const COMMODITIES_API_URL = process.env.COMMODITIES_API_URL || "";
+const COMMODITIES_API_KEY = process.env.COMMODITIES_API_KEY || "";
 
 const PRIORITY_DOMAINS = [
   "gov.br",
@@ -475,6 +482,59 @@ async function fetchRealtimePrices() {
     })(),
     (async () => {
       try {
+        const data = await fetchJson("https://api.bcb.gov.br/dados/serie/bcdata.sgs.432/dados/ultimos/1?formato=json");
+        if (data?.[0]?.valor) {
+          results.selic = {
+            value: `${parseFloat(data[0].valor).toFixed(2).replace(".", ",")}% a.a.`,
+            source: "Banco Central SGS 432",
+            updatedAt: data[0].data
+          };
+        }
+      } catch {}
+    })(),
+    (async () => {
+      try {
+        const data = await fetchJson("https://api.bcb.gov.br/dados/serie/bcdata.sgs.433/dados/ultimos/1?formato=json");
+        if (data?.[0]?.valor) {
+          results.ipca = {
+            value: `${parseFloat(data[0].valor).toFixed(2).replace(".", ",")}%`,
+            source: "Banco Central SGS 433",
+            updatedAt: data[0].data
+          };
+        }
+      } catch {}
+    })(),
+    (async () => {
+      try {
+        const data = await fetchJson("https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados/ultimos/1?formato=json");
+        if (data?.[0]?.valor) {
+          results.cdi = {
+            value: `${parseFloat(data[0].valor).toFixed(4).replace(".", ",")}% ao dia`,
+            source: "Banco Central SGS 12",
+            updatedAt: data[0].data
+          };
+        }
+      } catch {}
+    })(),
+    (async () => {
+      try {
+        if (!COMMODITIES_API_URL) return;
+        const headers = COMMODITIES_API_KEY
+          ? { "Authorization": `Bearer ${COMMODITIES_API_KEY}`, "X-API-KEY": COMMODITIES_API_KEY }
+          : {};
+        const data = await fetchJson(COMMODITIES_API_URL, { headers });
+        const oilValue = data?.brent ?? data?.oil ?? data?.price ?? data?.value;
+        const updatedAt = data?.updatedAt || data?.timestamp || data?.date || new Date().toISOString();
+        if (!oilValue) return;
+        results.oil = {
+          value: String(oilValue),
+          source: data?.source || "Commodities API",
+          updatedAt: String(updatedAt)
+        };
+      } catch {}
+    })(),
+    (async () => {
+      try {
         const data = await fetchJson("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=brl%2Cusd&include_24hr_change=true");
         const btc = data?.bitcoin;
         if (!btc) return;
@@ -506,7 +566,13 @@ function isRealtimePriceQuestion(message) {
     "acao",
     "acoes",
     "petr4",
-    "vale3"
+    "vale3",
+    "selic",
+    "ipca",
+    "cdi",
+    "petroleo",
+    "petróleo",
+    "brent"
   ].some((term) => normalized.includes(normalizeText(term)));
 }
 
@@ -585,6 +651,142 @@ function makeBrowserHeaders() {
     "Connection": "keep-alive",
     "Upgrade-Insecure-Requests": "1"
   };
+}
+
+function makeResult({ title, url, snippet, provider, source }) {
+  return {
+    title: stripHtml(title),
+    url: cleanSearchUrl(url),
+    snippet: stripHtml(snippet || ""),
+    provider,
+    source: source || getHostname(url)
+  };
+}
+
+async function fetchJsonWithTimeout(url, options = {}, timeoutMs = PROVIDER_TIMEOUT_MS) {
+  const response = await fetch(url, {
+    ...options,
+    signal: AbortSignal.timeout(timeoutMs)
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  return response.json();
+}
+
+function buildSearchProviders(classification) {
+  const providers = [];
+
+  if (TAVILY_API_KEY) {
+    providers.push(["tavily", async (query) => {
+      const data = await fetchJsonWithTimeout("https://api.tavily.com/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          api_key: TAVILY_API_KEY,
+          query,
+          topic: classification.category === "news" ? "news" : "general",
+          search_depth: "basic",
+          max_results: MAX_RESULTS,
+          include_answer: false,
+          include_images: false,
+          include_raw_content: false
+        })
+      });
+
+      return prioritizeResults(
+        (data?.results || []).map((item) =>
+          makeResult({
+            title: item.title,
+            url: item.url,
+            snippet: item.content,
+            provider: "tavily",
+            source: item.url
+          })
+        )
+      );
+    }]);
+  }
+
+  if (SERPER_API_KEY) {
+    providers.push(["serper", async (query) => {
+      const data = await fetchJsonWithTimeout("https://google.serper.dev/search", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-KEY": SERPER_API_KEY
+        },
+        body: JSON.stringify({
+          q: query,
+          gl: "br",
+          hl: "pt-br",
+          num: MAX_RESULTS
+        })
+      });
+
+      return prioritizeResults(
+        (data?.organic || []).map((item) =>
+          makeResult({
+            title: item.title,
+            url: item.link,
+            snippet: item.snippet,
+            provider: "serper",
+            source: item.link
+          })
+        )
+      );
+    }]);
+  }
+
+  if (BRAVE_SEARCH_API_KEY) {
+    providers.push(["brave", async (query) => {
+      const data = await fetchJsonWithTimeout(
+        `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${MAX_RESULTS}&search_lang=pt-br&country=BR`,
+        {
+          headers: {
+            "Accept": "application/json",
+            "X-Subscription-Token": BRAVE_SEARCH_API_KEY
+          }
+        }
+      );
+
+      return prioritizeResults(
+        (data?.web?.results || []).map((item) =>
+          makeResult({
+            title: item.title,
+            url: item.url,
+            snippet: item.description,
+            provider: "brave",
+            source: item.url
+          })
+        )
+      );
+    }]);
+  }
+
+  if (GOOGLE_CSE_API_KEY && GOOGLE_CSE_CX) {
+    providers.push(["google-cse", async (query) => {
+      const data = await fetchJsonWithTimeout(
+        `https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(GOOGLE_CSE_API_KEY)}&cx=${encodeURIComponent(GOOGLE_CSE_CX)}&q=${encodeURIComponent(query)}&hl=pt-BR&num=${Math.min(MAX_RESULTS, 10)}`
+      );
+
+      return prioritizeResults(
+        (data?.items || []).map((item) =>
+          makeResult({
+            title: item.title,
+            url: item.link,
+            snippet: item.snippet,
+            provider: "google-cse",
+            source: item.displayLink || item.link
+          })
+        )
+      );
+    }]);
+  }
+
+  return providers;
 }
 
 async function searchDuckDuckGoHtml(query) {
@@ -802,27 +1004,28 @@ async function executeSearch(message, classification) {
   const queries = buildSearchQueries(message, classification);
   const errors = [];
   let bestResults = [];
-  let engine = "multi";
+  let engine = "unavailable";
   let chosenQuery = queries[0];
+  const providers = buildSearchProviders(classification);
+
+  if (providers.length === 0) {
+    return {
+      searched: true,
+      engine: "unavailable",
+      query: chosenQuery,
+      checkedAt: new Date().toISOString(),
+      classification,
+      externalSuccess: false,
+      results: [],
+      warning: "Nenhuma API de busca externa esta configurada no momento.",
+      errors: ["search-provider-not-configured"]
+    };
+  }
 
   for (const query of queries) {
     if (Date.now() >= deadline) {
       errors.push("Tempo total de busca excedido");
       break;
-    }
-
-    const providers = [];
-    if (classification.category === "news") {
-      providers.push(["google-news-rss", searchGoogleNewsRss]);
-    }
-    providers.push(
-      ["duckduckgo-html", searchDuckDuckGoHtml],
-      ["duckduckgo-lite", searchDuckDuckGoLite],
-      ["bing", searchBing]
-    );
-
-    if (Date.now() + PROVIDER_TIMEOUT_MS < deadline) {
-      providers.push(["playwright", searchWithPlaywright]);
     }
 
     for (const [providerName, provider] of providers) {
@@ -854,9 +1057,10 @@ async function executeSearch(message, classification) {
     query: chosenQuery,
     checkedAt: new Date().toISOString(),
     classification,
+    externalSuccess: enriched.length > 0,
     results: enriched,
     warning: enriched.length === 0
-      ? "Nao foi possivel obter resultados atualizados suficientes na pesquisa online."
+      ? "Nao foi possivel obter resultados atualizados suficientes na consulta externa."
       : undefined,
     errors: errors.slice(0, 6)
   };
@@ -876,6 +1080,7 @@ async function pesquisarInternet(message, options = {}) {
     return {
       searched: false,
       skipped: true,
+      externalSuccess: false,
       checkedAt: new Date().toISOString(),
       classification,
       results: []
@@ -927,6 +1132,7 @@ async function pesquisarInternet(message, options = {}) {
         engine: "multi",
         checkedAt: new Date().toISOString(),
         classification,
+        externalSuccess: false,
         results: [],
         warning: "Falha na pesquisa online no momento.",
         errors: [error.message]
@@ -979,10 +1185,50 @@ async function enrichWithRealtimeData(internetResults, message) {
     });
   }
 
+  if (normalized.includes("selic") && prices.selic) {
+    injectedResults.push({
+      title: `Selic meta - ${prices.selic.value}`,
+      url: "https://api.bcb.gov.br/dados/serie/bcdata.sgs.432/dados/ultimos/1?formato=json",
+      source: prices.selic.source,
+      snippet: `Selic meta: ${prices.selic.value} | Fonte: ${prices.selic.source} | Consulta: ${prices.selic.updatedAt}`
+    });
+  }
+
+  if ((normalized.includes("ipca") || normalized.includes("inflacao") || normalized.includes("inflação")) && prices.ipca) {
+    injectedResults.push({
+      title: `IPCA mais recente - ${prices.ipca.value}`,
+      url: "https://api.bcb.gov.br/dados/serie/bcdata.sgs.433/dados/ultimos/1?formato=json",
+      source: prices.ipca.source,
+      snippet: `IPCA mais recente: ${prices.ipca.value} | Fonte: ${prices.ipca.source} | Consulta: ${prices.ipca.updatedAt}`
+    });
+  }
+
+  if (normalized.includes("cdi") && prices.cdi) {
+    injectedResults.push({
+      title: `CDI - ${prices.cdi.value}`,
+      url: "https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados/ultimos/1?formato=json",
+      source: prices.cdi.source,
+      snippet: `CDI mais recente: ${prices.cdi.value} | Fonte: ${prices.cdi.source} | Consulta: ${prices.cdi.updatedAt}`
+    });
+  }
+
+  if ((normalized.includes("petroleo") || normalized.includes("petróleo") || normalized.includes("brent")) && prices.oil) {
+    injectedResults.push({
+      title: `Petroleo Brent - ${prices.oil.value}`,
+      url: COMMODITIES_API_URL || "https://example.com/commodities",
+      source: prices.oil.source,
+      snippet: `Petroleo Brent: ${prices.oil.value} | Fonte: ${prices.oil.source} | Consulta: ${prices.oil.updatedAt}`
+    });
+  }
+
   if (injectedResults.length === 0) return internetResults;
 
   return {
     ...internetResults,
+    engine: internetResults.engine === "unavailable" ? "realtime-api" : internetResults.engine,
+    externalSuccess: true,
+    warning: undefined,
+    checkedAt: new Date().toISOString(),
     results: prioritizeResults([
       ...injectedResults,
       ...(internetResults.results || [])

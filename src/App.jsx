@@ -279,7 +279,16 @@ function renderTable(lines, startIndex) {
 }
 
 function renderMarkdown(text) {
-  const raw = String(text || "");
+  const raw = String(text || "")
+    .replace(/<think\b[^>]*>[\s\S]*?(?:<\/think>|$)/gi, "")
+    .replace(/<\/?think\b[^>]*>/gi, "")
+    .replace(/<reasoning\b[^>]*>[\s\S]*?(?:<\/reasoning>|$)/gi, "")
+    .replace(/<\/?reasoning\b[^>]*>/gi, "")
+    .replace(/^\s*(?:thought:|reasoning:|analysis:|thinking:)\s.*$/gim, "")
+    .replace(/^\s*(?:here(?:'|’)s| is)?\s+(?:my\s+)?(?:reasoning|analysis|thought process)[\s:.-]*$/gim, "")
+    .replace(/^\s*(?:internal\s+)?(?:reasoning|analysis|thinking)[\s:.-]*$/gim, "")
+    .replace(/^\s*(?:let(?:'|’)s|i(?:'|’)ll|i will)\s+think(?:\s+step by step)?[\s:.-]*.*$/gim, "")
+    .trim();
   const lines = raw.split(/\r?\n/);
   const html = [];
   let listItems = [];
