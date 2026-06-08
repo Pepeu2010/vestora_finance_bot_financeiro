@@ -219,9 +219,18 @@ function escapeHtml(text) {
 }
 
 function formatInlineMarkdown(text) {
-  return escapeHtml(text)
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*(.+?)\*/g, "<em>$1</em>");
+  let result = escapeHtml(text);
+  // Inline code (must come before other formatting)
+  result = result.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
+  // Bold
+  result = result.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  // Italic
+  result = result.replace(/\*(.+?)\*/g, "<em>$1</em>");
+  // Auto-link URLs
+  result = result.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="message-link">$1</a>');
+  // Markdown links [text](url)
+  result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="message-link">$1</a>');
+  return result;
 }
 
 function isTableDivider(line) {
@@ -270,21 +279,52 @@ function renderTable(lines, startIndex) {
 }
 
 function renderMarkdown(text) {
-  const lines = String(text || "").split(/\r?\n/);
+  const raw = String(text || "");
+  const lines = raw.split(/\r?\n/);
   const html = [];
   let listItems = [];
+  let orderedItems = [];
+  let inCodeBlock = false;
+  let codeLines = [];
+  let codeLanguage = "";
 
   function flushList() {
     if (listItems.length > 0) {
       html.push(`<ul>${listItems.join("")}</ul>`);
       listItems = [];
     }
+    if (orderedItems.length > 0) {
+      html.push(`<ol>${orderedItems.join("")}</ol>`);
+      orderedItems = [];
+    }
   }
 
   for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index].trim();
+    const line = lines[index];
 
-    if (!line) {
+    // Fenced code blocks
+    if (line.trimStart().startsWith("```")) {
+      if (inCodeBlock) {
+        html.push(`<div class="code-block"><div class="code-block-header">${codeLanguage || "código"}</div><pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre></div>`);
+        codeLines = [];
+        codeLanguage = "";
+        inCodeBlock = false;
+      } else {
+        flushList();
+        inCodeBlock = true;
+        codeLanguage = line.trim().slice(3).trim();
+      }
+      continue;
+    }
+
+    if (inCodeBlock) {
+      codeLines.push(line);
+      continue;
+    }
+
+    const trimmed = line.trim();
+
+    if (!trimmed) {
       flushList();
       continue;
     }
@@ -297,21 +337,41 @@ function renderMarkdown(text) {
       continue;
     }
 
-    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
     if (heading) {
       flushList();
       html.push(`<h3>${formatInlineMarkdown(heading[2])}</h3>`);
       continue;
     }
 
-    const bullet = line.match(/^[-*]\s+(.+)$/);
+    const bullet = trimmed.match(/^[-*]\s+(.+)$/);
     if (bullet) {
+      orderedItems = [];
       listItems.push(`<li>${formatInlineMarkdown(bullet[1])}</li>`);
       continue;
     }
 
+    const ordered = trimmed.match(/^\d+\.\s+(.+)$/);
+    if (ordered) {
+      listItems = [];
+      orderedItems.push(`<li>${formatInlineMarkdown(ordered[1])}</li>`);
+      continue;
+    }
+
+    // Blockquote
+    if (trimmed.startsWith("> ")) {
+      flushList();
+      html.push(`<blockquote class="message-quote">${formatInlineMarkdown(trimmed.slice(2))}</blockquote>`);
+      continue;
+    }
+
     flushList();
-    html.push(`<p>${formatInlineMarkdown(line)}</p>`);
+    html.push(`<p>${formatInlineMarkdown(trimmed)}</p>`);
+  }
+
+  // Flush any unclosed code block
+  if (inCodeBlock && codeLines.length > 0) {
+    html.push(`<div class="code-block"><pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre></div>`);
   }
 
   flushList();
@@ -319,48 +379,7 @@ function renderMarkdown(text) {
 }
 
 function MessageSources({ sources }) {
-  if (!sources || sources.length === 0) return null;
-
-  const [expanded, setExpanded] = useState(false);
-  const visibleSources = expanded ? sources : sources.slice(0, 3);
-
-  return (
-    <div className="message-sources">
-      <button
-        className="message-sources-toggle"
-        type="button"
-        onClick={() => setExpanded((prev) => !prev)}
-      >
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
-        </svg>
-        Fontes
-        <span className="message-sources-count">{sources.length}</span>
-        <svg className={`message-sources-chevron${expanded ? " open" : ""}`} viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-          <path d="M6 9l6 6 6-6" />
-        </svg>
-      </button>
-      <div className={`message-sources-list${expanded ? " expanded" : ""}`}>
-        {visibleSources.map((source, index) => (
-          <a
-            key={index}
-            className="message-source-item"
-            href={source.url}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <span className="message-source-favicon">
-              {source.source ? source.source.charAt(0).toUpperCase() : "🔗"}
-            </span>
-            <span className="message-source-info">
-              <span className="message-source-title">{source.title}</span>
-              <span className="message-source-url">{source.source || new URL(source.url).hostname}</span>
-            </span>
-          </a>
-        ))}
-      </div>
-    </div>
-  );
+  return null;
 }
 
 function MessageBubble({ message, onRetry }) {
@@ -906,6 +925,7 @@ export default function App() {
   const inputRef = useRef(null);
   const authHideTimer = useRef(null);
   const sendingLockRef = useRef(false);
+  const abortControllerRef = useRef(null);
 
   const currentConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === currentConversationId) || null,
@@ -1145,6 +1165,13 @@ export default function App() {
     persistConversations(nextConversations);
   }
 
+  function stopGeneration() {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+  }
+
   async function sendMessage(text) {
     if (sendingLockRef.current) return;
     sendingLockRef.current = true;
@@ -1172,32 +1199,26 @@ export default function App() {
       text: "Digitando..."
     });
 
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
     try {
-      const response = await fetch("/api/chat", {
+      const response = await fetch("/api/chat/stream", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           conversationId: activeConversationId,
           sessionId: activeConversationId || deviceId,
           message: text,
-          settings: settings
-        })
+          settings: settings,
+          stream: true
+        }),
+        signal: abortController.signal
       });
 
-      const data = await response.json();
-
-      if (data.conversationId && data.conversationId !== activeConversationId) {
-        replaceConversationId(activeConversationId, data.conversationId);
-        activeConversationId = data.conversationId;
-        setCurrentConversationId(data.conversationId);
-        localStorage.setItem(CURRENT_CONVERSATION_KEY, data.conversationId);
-      }
-
-      removeMessageFromConversation(activeConversationId, typingId);
-
       if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        removeMessageFromConversation(activeConversationId, typingId);
         appendMessageToConversation(activeConversationId, {
           id: crypto.randomUUID(),
           role: "bot",
@@ -1209,26 +1230,98 @@ export default function App() {
         return;
       }
 
-      appendMessageToConversation(activeConversationId, {
-        id: crypto.randomUUID(),
-        role: "bot",
-        text: data.answer,
-        sources: data.sources || []
-      });
-      speakText(data.answer);
-      showToast("Mensagem enviada", "success", 2000);
-      await loadCloudConversations();
-    } catch {
+      // Streaming: read SSE line by line
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let streamText = "";
+      let streamSources = [];
+      let finalConversationId = activeConversationId;
+      const botMsgId = crypto.randomUUID();
+
+      // Replace typing indicator with streaming message (empty at first)
       removeMessageFromConversation(activeConversationId, typingId);
       appendMessageToConversation(activeConversationId, {
-        id: crypto.randomUUID(),
+        id: botMsgId,
         role: "bot",
-        text: "Não consegui conectar ao servidor.",
-        hasError: true,
-        retryFor: text
+        text: ""
       });
-      showToast("Erro de conexão", "error");
+
+      setStatusText("Digitando...");
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith("data:")) continue;
+
+          try {
+            const event = JSON.parse(trimmed.slice(5).trim());
+
+            if (event.type === "sources") {
+              streamSources = event.sources || [];
+            } else if (event.type === "chunk") {
+              streamText += event.text;
+              updateConversation(activeConversationId, (conversation) => ({
+                messages: conversation.messages.map((message) =>
+                  message.id === botMsgId ? { ...message, text: streamText } : message
+                )
+              }));
+            } else if (event.type === "done") {
+              finalConversationId = event.conversationId || activeConversationId;
+            } else if (event.type === "error") {
+              throw new Error(event.error);
+            }
+          } catch (parseErr) {
+            if (parseErr.name === "AbortError") throw parseErr;
+            if (parseErr.message && !parseErr.message.includes("JSON")) throw parseErr;
+          }
+        }
+      }
+
+      // Handle conversation ID change
+      if (finalConversationId !== activeConversationId) {
+        replaceConversationId(activeConversationId, finalConversationId);
+        activeConversationId = finalConversationId;
+        setCurrentConversationId(finalConversationId);
+        localStorage.setItem(CURRENT_CONVERSATION_KEY, finalConversationId);
+      }
+
+      // Finalize: update message with sources
+      if (streamText) {
+        updateConversation(activeConversationId, (conversation) => ({
+          messages: conversation.messages.map((message) =>
+            message.id === botMsgId ? { ...message, text: streamText, sources: streamSources } : message
+          )
+        }));
+        speakText(streamText);
+        showToast("Mensagem enviada", "success", 2000);
+        await loadCloudConversations();
+      }
+    } catch (error) {
+      if (error.name === "AbortError") {
+        // User stopped generation — keep partial text
+        removeMessageFromConversation(activeConversationId, typingId);
+        showToast("Geração interrompida", "info", 2000);
+      } else {
+        removeMessageFromConversation(activeConversationId, typingId);
+        appendMessageToConversation(activeConversationId, {
+          id: crypto.randomUUID(),
+          role: "bot",
+          text: "Não consegui conectar ao servidor.",
+          hasError: true,
+          retryFor: text
+        });
+        showToast("Erro de conexão", "error");
+      }
     } finally {
+      abortControllerRef.current = null;
       sendingLockRef.current = false;
       setIsSending(false);
       setStatusText(t("online"));
@@ -1784,11 +1877,11 @@ export default function App() {
             />
             <button
               id="sendButton"
-              type="submit"
-              aria-label={isSending ? "Aguardando resposta" : "Enviar mensagem"}
-              title={isSending ? "Aguardando resposta" : "Enviar mensagem"}
-              disabled={isSending}
+              type={isSending ? "button" : "submit"}
+              aria-label={isSending ? "Parar geração" : "Enviar mensagem"}
+              title={isSending ? "Parar geração" : "Enviar mensagem"}
               onPointerDown={() => setSubmitSource("button")}
+              onClick={isSending ? (e) => { e.preventDefault(); stopGeneration(); } : undefined}
             >
               {isSending ? (
                 <svg className="stop-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">

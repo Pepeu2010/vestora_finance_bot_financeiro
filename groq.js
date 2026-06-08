@@ -176,6 +176,96 @@ function cleanModelAnswer(text) {
     .trim();
 }
 
+/**
+ * Builds the messages array for Groq API (shared between streaming and non-streaming).
+ */
+function buildMessages({ message, history, profileSummary, userPreferences, officialFacts, internetResults }) {
+  return formatMessages({ message, history, profileSummary, userPreferences, officialFacts, internetResults });
+}
+
+/**
+ * Streaming version of askGroq — yields text chunks as they arrive.
+ * Returns an async generator that yields strings.
+ */
+async function* askGroqStream({ message, history, profileSummary, userPreferences, officialFacts, internetResults }) {
+  if (!apiKey || apiKey === "COLE_SUA_CHAVE_GROQ_AQUI") {
+    yield "A chave da Groq ainda nao foi configurada. Edite o arquivo .env, insira sua GROQ_API_KEY e reinicie o servidor.";
+    return;
+  }
+
+  const { trimmedHistory, trimmedInternet } = trimContext({
+    message, history, profileSummary, userPreferences, officialFacts, internetResults
+  });
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model,
+      messages: buildMessages({
+        message, history: trimmedHistory, profileSummary, userPreferences, officialFacts, internetResults: trimmedInternet
+      }),
+      temperature: 0.1,
+      max_tokens: maxTokens,
+      top_p: 0.9,
+      stream: true
+    })
+  });
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => "");
+    let errMsg = "Erro ao chamar a API da Groq.";
+    try { errMsg = JSON.parse(errText)?.error?.message || errMsg; } catch {}
+    throw new Error(errMsg);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith("data:")) continue;
+
+        const data = trimmed.slice(5).trim();
+        if (data === "[DONE]") return;
+
+        try {
+          const parsed = JSON.parse(data);
+          const content = parsed.choices?.[0]?.delta?.content;
+          if (content) yield content;
+        } catch {}
+      }
+    }
+
+    // Process any remaining buffer
+    if (buffer.trim()) {
+      const trimmed = buffer.trim();
+      if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
+        try {
+          const parsed = JSON.parse(trimmed.slice(5).trim());
+          const content = parsed.choices?.[0]?.delta?.content;
+          if (content) yield content;
+        } catch {}
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 async function askGroq({ message, history, profileSummary, userPreferences, officialFacts, internetResults }) {
   if (!apiKey || apiKey === "COLE_SUA_CHAVE_GROQ_AQUI") {
     return "A chave da Groq ainda nao foi configurada. Edite o arquivo .env, insira sua GROQ_API_KEY e reinicie o servidor.";
@@ -226,5 +316,7 @@ async function askGroq({ message, history, profileSummary, userPreferences, offi
 }
 
 module.exports = {
-  askGroq
+  askGroq,
+  askGroqStream,
+  buildMessages
 };

@@ -8,9 +8,14 @@ const bcrypt = require("bcryptjs");
 const cookieParser = require("cookie-parser");
 const fs = require("fs");
 const path = require("path");
-const { askGroq } = require("./groq");
+const { askGroq, askGroqStream } = require("./groq");
 const { getOfficialFactsForMessage } = require("./officialFacts");
-const { pesquisarInternet, shouldPesquisarInternet } = require("./internetSearch");
+const {
+  pesquisarInternet,
+  shouldPesquisarInternet,
+  classifyFreshnessNeed,
+  enrichWithRealtimeData
+} = require("./internetSearch");
 const { supabase, isSupabaseConfigured } = require("./supabase");
 
 const app = express();
@@ -66,6 +71,16 @@ const chatLimiter = rateLimit({
   legacyHeaders: false,
   message: {
     error: "Muitas mensagens em pouco tempo. Aguarde alguns segundos antes de enviar novamente."
+  }
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: "Muitas tentativas de login. Aguarde alguns minutos antes de tentar novamente."
   }
 });
 
@@ -177,7 +192,7 @@ function setSessionCookie(res, user) {
   res.cookie(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: false,
+    secure: process.env.NODE_ENV === "production",
     maxAge: 1000 * 60 * 60 * 24 * 7
   });
 }
@@ -614,7 +629,7 @@ app.get("/api/auth/me", (req, res) => {
   res.json({ authenticated: Boolean(user), user });
 });
 
-app.post("/api/auth/register", async (req, res) => {
+app.post("/api/auth/register", authLimiter, async (req, res) => {
   if (!isSupabaseConfigured) {
     return res.status(503).json({ error: "Supabase nao configurado." });
   }
@@ -654,7 +669,7 @@ app.post("/api/auth/register", async (req, res) => {
   }
 });
 
-app.post("/api/auth/login", async (req, res) => {
+app.post("/api/auth/login", authLimiter, async (req, res) => {
   if (!isSupabaseConfigured) {
     return res.status(503).json({ error: "Supabase nao configurado." });
   }
@@ -1004,24 +1019,27 @@ app.get("/api/auth/sessions", requireAuth, (req, res) => {
   });
 });
 
-app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
+/**
+ * Shared logic to prepare a chat request (validation, security, history, searches).
+ * Returns an object with all prepared data, or sends a response and returns null.
+ */
+async function prepareChatRequest(req, res) {
   const userMessage = sanitizeMessage(req.body.message);
   const userSettings = req.body.settings || {};
   const conversationIdFromRequest = isUuid(req.body.conversationId) ? req.body.conversationId : "";
   const session = getSession(req.body.sessionId || conversationIdFromRequest);
 
   if (!userMessage) {
-    return res.status(400).json({
-      error: "Mensagem vazia.",
-      sessionId: session.id
-    });
+    res.status(400).json({ error: "Mensagem vazia.", sessionId: session.id });
+    return null;
   }
 
   if (String(req.body.message || "").length > MAX_MESSAGE_LENGTH) {
-    return res.status(400).json({
+    res.status(400).json({
       error: `Mensagem muito longa. Use no máximo ${MAX_MESSAGE_LENGTH} caracteres.`,
       sessionId: session.id
     });
+    return null;
   }
 
   console.log(`[${now()}] [${session.id}] Usuario: ${previewForLog(userMessage)}`);
@@ -1030,103 +1048,101 @@ app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
   if (isSensitiveSystemRequest(userMessage)) {
     addToHistory(session, "user", userMessage);
     addToHistory(session, "model", SECURITY_REFUSAL);
-
     console.warn(`[${now()}] [${session.id}] Pedido sensivel bloqueado.`);
-
-    return res.json({
+    res.json({
       sessionId: session.id,
       conversationId: conversationIdFromRequest || createSessionId(),
       answer: SECURITY_REFUSAL
     });
+    return null;
   }
 
+  const conversationId = await ensureConversation({
+    conversationId: conversationIdFromRequest,
+    userId: req.user.id,
+    firstMessage: userMessage
+  });
+
+  const cloudHistory = await getConversationMessages({
+    conversationId,
+    userId: req.user.id
+  });
+
+  const historyForGroq = (userSettings.referenciarHistorico !== false)
+    ? (isSupabaseConfigured
+        ? cloudHistory.slice(-MAX_HISTORY_MESSAGES)
+        : session.history.slice(-MAX_HISTORY_MESSAGES))
+    : [];
+
+  await saveCloudMessage({ conversationId, role: "user", content: userMessage });
+
+  const freshness = classifyFreshnessNeed(userMessage);
+  const mustUseWebSearch = shouldPesquisarInternet(userMessage);
+  console.log(
+    `[${now()}] [${session.id}] Classificacao web: ${freshness.category} | shouldSearch=${mustUseWebSearch} | motivo=${freshness.reason}`
+  );
+
+  // Run searches in parallel
+  const searchPromises = [];
+  searchPromises.push(
+    userSettings.buscaConector !== false
+      ? getOfficialFactsForMessage(userMessage, { online: true }).catch(() => null)
+      : Promise.resolve(null)
+  );
+  searchPromises.push(
+    (mustUseWebSearch || userSettings.buscaNaWeb !== false)
+      ? pesquisarInternet(userMessage, {
+          classification: freshness,
+          force: mustUseWebSearch
+        }).catch(() => null)
+      : Promise.resolve(null)
+  );
+
+  const [officialFacts, internetResults] = await Promise.all(searchPromises);
+  const enrichedInternetResults = await enrichWithRealtimeData(internetResults, userMessage);
+
+  if (enrichedInternetResults?.searched) {
+    console.log(
+      `[${now()}] [${session.id}] Pesquisa online: ${enrichedInternetResults.engine}, ${enrichedInternetResults.results?.length || 0} resultado(s), cache=${Boolean(enrichedInternetResults.fromCache)}.`
+    );
+  }
+
+  const userPreferences = buildUserPreferences(userSettings);
+
+  return {
+    session,
+    conversationId,
+    userMessage,
+    userSettings,
+    historyForGroq,
+    officialFacts,
+    enrichedInternetResults,
+    userPreferences
+  };
+}
+
+/**
+ * Non-streaming chat endpoint (original behavior).
+ */
+app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
   try {
-    const conversationId = await ensureConversation({
-      conversationId: conversationIdFromRequest,
-      userId: req.user.id,
-      firstMessage: userMessage
-    });
+    const prepared = await prepareChatRequest(req, res);
+    if (!prepared) return;
 
-    const cloudHistory = await getConversationMessages({
-      conversationId,
-      userId: req.user.id
-    });
+    const { session, conversationId, userMessage, userSettings, historyForGroq, officialFacts, enrichedInternetResults, userPreferences } = prepared;
 
-    const historyForGroq = (userSettings.referenciarHistorico !== false)
-      ? (isSupabaseConfigured
-          ? cloudHistory.slice(-MAX_HISTORY_MESSAGES)
-          : session.history.slice(-MAX_HISTORY_MESSAGES))
-      : [];
-
-    await saveCloudMessage({
-      conversationId,
-      role: "user",
-      content: userMessage
-    });
-
-
-    const searchPromises = [];
-
-    if (userSettings.buscaConector !== false) {
-      searchPromises.push(
-        getOfficialFactsForMessage(userMessage, { online: true }).catch((error) => {
-          console.warn(`[${now()}] [${session.id}] Nao consegui buscar fonte oficial:`, error.message);
-          return null;
-        })
-      );
-    } else {
-      searchPromises.push(Promise.resolve(null));
-    }
-
-    if (userSettings.buscaNaWeb !== false) {
-      searchPromises.push(
-        pesquisarInternet(userMessage).catch((error) => {
-          console.warn(`[${now()}] [${session.id}] Nao consegui pesquisar na internet:`, error.message);
-          return null;
-        })
-      );
-    } else {
-      searchPromises.push(Promise.resolve(null));
-    }
-
-    const [officialFacts, internetResults] = await Promise.all(searchPromises);
-
-    if (internetResults?.searched) {
-      console.log(
-        `[${now()}] [${session.id}] Pesquisa online: ${internetResults.engine}, ${internetResults.results?.length || 0} resultado(s).`
-      );
-    }
-
+    // Try quick calculator first
     if (userSettings.respostasRapidas !== false) {
       const quickAnswer = tryQuickCalculator(userMessage, session, officialFacts);
       if (quickAnswer) {
         addToHistory(session, "user", userMessage);
         addToHistory(session, "model", quickAnswer);
-
-        await saveCloudMessage({
-          conversationId,
-          role: "model",
-          content: quickAnswer
-        });
-
+        await saveCloudMessage({ conversationId, role: "model", content: quickAnswer });
         console.log(`[${now()}] [${session.id}] Resposta por calculadora simples.`);
 
-        const sources = (internetResults?.results || []).slice(0, 6).map((r) => ({
-          title: r.title,
-          url: r.url,
-          source: r.source || ""
-        }));
-
-        return res.json({
-          sessionId: session.id,
-          conversationId,
-          answer: quickAnswer,
-          sources
-        });
+        return res.json({ sessionId: session.id, conversationId, answer: quickAnswer });
       }
     }
-
-    const userPreferences = buildUserPreferences(userSettings);
 
     const answer = await askGroq({
       message: userMessage,
@@ -1134,39 +1150,96 @@ app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
       profileSummary: userSettings.referenciarMemorias !== false ? getProfileSummary(session) : "",
       userPreferences,
       officialFacts,
-      internetResults
+      internetResults: enrichedInternetResults
     });
 
     addToHistory(session, "user", userMessage);
     addToHistory(session, "model", answer);
-
-    await saveCloudMessage({
-      conversationId,
-      role: "model",
-      content: answer
-    });
-
+    await saveCloudMessage({ conversationId, role: "model", content: answer });
     console.log(`[${now()}] [${session.id}] Resposta enviada.`);
 
-    const sources = (internetResults?.results || []).slice(0, 6).map((r) => ({
-      title: r.title,
-      url: r.url,
-      source: r.source || ""
-    }));
-
-    res.json({
-      sessionId: session.id,
-      conversationId,
-      answer,
-      sources
-    });
+    res.json({ sessionId: session.id, conversationId, answer });
   } catch (error) {
-    console.error(`[${now()}] [${session.id}] Erro:`, error.message);
+    console.error(`[${now()}] Erro:`, error.message);
+    res.status(500).json({ error: "Tive um problema ao gerar a resposta. Tente novamente em instantes." });
+  }
+});
 
-    res.status(500).json({
-      sessionId: session.id,
-      error: "Tive um problema ao gerar a resposta. Tente novamente em instantes."
+/**
+ * Streaming chat endpoint — returns Server-Sent Events.
+ */
+app.post("/api/chat/stream", requireAuth, chatLimiter, async (req, res) => {
+  try {
+    const prepared = await prepareChatRequest(req, res);
+    if (!prepared) return;
+
+    const { session, conversationId, userMessage, userSettings, historyForGroq, officialFacts, enrichedInternetResults, userPreferences } = prepared;
+
+    // Try quick calculator first (non-streaming fast path)
+    if (userSettings.respostasRapidas !== false) {
+      const quickAnswer = tryQuickCalculator(userMessage, session, officialFacts);
+      if (quickAnswer) {
+        addToHistory(session, "user", userMessage);
+        addToHistory(session, "model", quickAnswer);
+        await saveCloudMessage({ conversationId, role: "model", content: quickAnswer });
+        console.log(`[${now()}] [${session.id}] Resposta por calculadora simples (stream).`);
+
+        // Send as a single chunk
+        res.setHeader("Content-Type", "text/event-stream");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("Connection", "keep-alive");
+        res.setHeader("X-Accel-Buffering", "no");
+        res.flushHeaders();
+
+        res.write(`data: ${JSON.stringify({ type: "chunk", text: quickAnswer })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: "done", conversationId })}\n\n`);
+        res.end();
+        return;
+      }
+    }
+
+    // Set SSE headers
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+
+    // Stream the answer
+    let fullAnswer = "";
+    const stream = askGroqStream({
+      message: userMessage,
+      history: historyForGroq,
+      profileSummary: userSettings.referenciarMemorias !== false ? getProfileSummary(session) : "",
+      userPreferences,
+      officialFacts,
+      internetResults: enrichedInternetResults
     });
+
+    for await (const chunk of stream) {
+      fullAnswer += chunk;
+      res.write(`data: ${JSON.stringify({ type: "chunk", text: chunk })}\n\n`);
+    }
+
+    // Save complete answer to DB and history
+    addToHistory(session, "user", userMessage);
+    addToHistory(session, "model", fullAnswer);
+    await saveCloudMessage({ conversationId, role: "model", content: fullAnswer });
+    console.log(`[${now()}] [${session.id}] Resposta stream enviada.`);
+
+    // Signal completion
+    res.write(`data: ${JSON.stringify({ type: "done", conversationId })}\n\n`);
+    res.end();
+  } catch (error) {
+    console.error(`[${now()}] Erro stream:`, error.message);
+
+    // If headers already sent, send error as SSE event
+    if (res.headersSent) {
+      res.write(`data: ${JSON.stringify({ type: "error", error: "Tive um problema ao gerar a resposta. Tente novamente em instantes." })}\n\n`);
+      res.end();
+    } else {
+      res.status(500).json({ error: "Tive um problema ao gerar a resposta. Tente novamente em instantes." });
+    }
   }
 });
 

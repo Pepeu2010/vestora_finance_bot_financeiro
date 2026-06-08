@@ -3189,3 +3189,128 @@ body.theme-light .chat-header span { color: #5d6b65; }
     max-width: none;
   }
 }
+
+/* ── Markdown Enhancements ── */
+
+/* Code blocks (fenced) */
+.code-block {
+  margin: 12px 0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--line);
+}
+
+.code-block-header {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  padding: 6px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--line);
+}
+
+.code-block pre {
+  margin: 0;
+  padding: 14px;
+  overflow-x: auto;
+}
+
+.code-block code {
+  font-family: "SF Mono", "Fira Code", "JetBrains Mono", monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink);
+  white-space: pre;
+}
+
+body.theme-light .code-block {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+body.theme-light .code-block-header {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+/* Inline code */
+.inline-code {
+  font-family: "SF Mono", "Fira Code", "JetBrains Mono", monospace;
+  font-size: 0.88em;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--primary);
+  white-space: nowrap;
+}
+
+body.theme-light .inline-code {
+  background: rgba(34, 197, 94, 0.1);
+  color: #15803d;
+}
+
+/* Links in messages */
+.message-link {
+  color: var(--primary);
+  text-decoration: underline;
+  text-decoration-color: rgba(34, 197, 94, 0.3);
+  text-underline-offset: 2px;
+  transition: text-decoration-color 0.15s;
+}
+
+.message-link:hover {
+  text-decoration-color: var(--primary);
+}
+
+body.theme-light .message-link {
+  color: #15803d;
+}
+
+/* Blockquotes */
+.message-quote {
+  margin: 8px 0;
+  padding: 8px 14px;
+  border-left: 3px solid var(--primary-2);
+  background: rgba(20, 184, 166, 0.08);
+  border-radius: 0 8px 8px 0;
+  color: var(--muted);
+  font-style: italic;
+}
+
+body.theme-light .message-quote {
+  background: rgba(20, 184, 166, 0.06);
+}
+
+/* Ordered lists */
+.message.bot ol {
+  margin: 6px 0;
+  padding-left: 24px;
+}
+
+.message.bot ol li {
+  margin: 4px 0;
+  line-height: 1.6;
+}
+
+/* ── Streaming Cursor ── */
+@keyframes streamingBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.message.bot.streaming::after {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 16px;
+  background: var(--primary);
+  border-radius: 2px;
+  margin-left: 3px;
+  vertical-align: text-bottom;
+  animation: streamingBlink 0.8s ease-in-out infinite;
+}
+
+body.theme-light .message.bot.streaming::after {
+  background: #15803d;
+}
