@@ -1,15 +1,15 @@
-const SEARCH_TIMEOUT_MS = 12000;
-const PROVIDER_TIMEOUT_MS = 5000;
-const PAGE_FETCH_TIMEOUT_MS = 4000;
-const REALTIME_TIMEOUT_MS = 6000;
-const MAX_RESULTS = 8;
-const MAX_PAGE_SNIPPETS = 3;
+const SEARCH_TIMEOUT_MS = Number(process.env.WEB_SEARCH_TIMEOUT_MS || 12000);
+const PROVIDER_TIMEOUT_MS = Number(process.env.WEB_SEARCH_PROVIDER_TIMEOUT_MS || 5000);
+const PAGE_FETCH_TIMEOUT_MS = Number(process.env.WEB_SEARCH_PAGE_TIMEOUT_MS || 4000);
+const REALTIME_TIMEOUT_MS = Number(process.env.REALTIME_TIMEOUT_MS || 6000);
+const MAX_RESULTS = Number(process.env.WEB_SEARCH_MAX_RESULTS || 5);
+const MAX_PAGE_SNIPPETS = Number(process.env.WEB_SEARCH_PAGE_SNIPPETS || 5);
 const MAX_QUERIES = 4;
-const TAVILY_API_KEY = process.env.TAVILY_API_KEY || "";
-const SERPER_API_KEY = process.env.SERPER_API_KEY || "";
-const BRAVE_SEARCH_API_KEY = process.env.BRAVE_SEARCH_API_KEY || "";
-const GOOGLE_CSE_API_KEY = process.env.GOOGLE_CSE_API_KEY || "";
-const GOOGLE_CSE_CX = process.env.GOOGLE_CSE_CX || "";
+const WEB_SEARCH_CACHE_TTL_MS = Number(process.env.WEB_SEARCH_CACHE_TTL_MS || 15 * 60 * 1000);
+const SEARXNG_BASE_URL = String(process.env.SEARXNG_BASE_URL || process.env.SEARXNG_URL || "").trim();
+const ENABLE_DDG_PROVIDER = process.env.ENABLE_DDG_PROVIDER !== "false";
+const ENABLE_SEARXNG_PROVIDER = process.env.ENABLE_SEARXNG_PROVIDER !== "false";
+const ENABLE_PLAYWRIGHT_PROVIDER = process.env.ENABLE_PLAYWRIGHT_PROVIDER !== "false";
 const COMMODITIES_API_URL = process.env.COMMODITIES_API_URL || "";
 const COMMODITIES_API_KEY = process.env.COMMODITIES_API_KEY || "";
 
@@ -148,6 +148,25 @@ function getHostname(url) {
   }
 }
 
+function isSearchEngineInternalUrl(url) {
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.replace(/^www\./, "");
+
+    if (hostname === "duckduckgo.com" || hostname === "lite.duckduckgo.com") {
+      return true;
+    }
+
+    if (hostname === "bing.com" && parsed.pathname.startsWith("/ck/")) {
+      return true;
+    }
+
+    return false;
+  } catch {
+    return true;
+  }
+}
+
 function getDomainScore(url) {
   const hostname = getHostname(url);
   if (!hostname) return 0;
@@ -173,11 +192,30 @@ function dedupeResults(results) {
 
   return results.filter((result) => {
     const url = cleanSearchUrl(result.url);
-    if (!url || seen.has(url)) return false;
-    seen.add(url);
+    const comparable = getComparableUrl(url);
+    if (!url || !comparable || isSearchEngineInternalUrl(url) || seen.has(comparable)) return false;
+    seen.add(comparable);
     result.url = url;
     return Boolean(result.title);
   });
+}
+
+function getComparableUrl(rawUrl) {
+  try {
+    const parsed = new URL(cleanSearchUrl(rawUrl));
+    parsed.hash = "";
+    parsed.searchParams.delete("utm_source");
+    parsed.searchParams.delete("utm_medium");
+    parsed.searchParams.delete("utm_campaign");
+    parsed.searchParams.delete("utm_term");
+    parsed.searchParams.delete("utm_content");
+    parsed.searchParams.delete("gclid");
+    parsed.searchParams.delete("fbclid");
+    const pathname = parsed.pathname.replace(/\/+$/, "") || "/";
+    return `${parsed.hostname.replace(/^www\./, "")}${pathname}${parsed.search ? `?${parsed.searchParams.toString()}` : ""}`;
+  } catch {
+    return "";
+  }
 }
 
 function prioritizeResults(results) {
@@ -281,7 +319,7 @@ function classifyFreshnessNeed(message) {
     {
       category: "sports",
       ttlMs: 5 * 60 * 1000,
-      patterns: ["jogo", "placar", "resultado", "campeonato", "classificacao", "tabela", "rodada", "gol", "partida"]
+      patterns: ["jogo", "placar", "resultado", "campeonato", "classificacao", "classificação", "rodada", "gol", "partida"]
     },
     {
       category: "weather",
@@ -421,6 +459,28 @@ function buildSearchQueries(message, classification) {
   }
 
   return [...new Set(queries)].slice(0, MAX_QUERIES);
+}
+
+function shouldAttachRealtimeData(message) {
+  const normalized = normalizeText(message);
+  return [
+    "dolar",
+    "dólar",
+    "euro",
+    "bitcoin",
+    "btc",
+    "ethereum",
+    "selic",
+    "ipca",
+    "cdi",
+    "petroleo",
+    "petróleo",
+    "brent",
+    "salario minimo",
+    "salário mínimo",
+    "irpf",
+    "imposto de renda"
+  ].some((term) => normalized.includes(normalizeText(term)));
 }
 
 async function fetchRealtimePrices() {
@@ -621,10 +681,17 @@ async function fetchPageSnippet(url, query) {
 }
 
 async function enrichResultsWithPageSnippets(results, query) {
-  const officialResults = results.filter((result) => isLikelySafePage(result.url)).slice(0, MAX_PAGE_SNIPPETS);
+  const ranked = prioritizeResults(results);
+  const officialResults = ranked
+    .filter((result) => isLikelySafePage(result.url))
+    .slice(0, MAX_PAGE_SNIPPETS);
+  const fallbackResults = ranked
+    .filter((result) => !officialResults.some((item) => item.url === result.url))
+    .slice(0, Math.max(0, MAX_PAGE_SNIPPETS - officialResults.length));
+  const targets = [...officialResults, ...fallbackResults].slice(0, MAX_PAGE_SNIPPETS);
 
   const snippets = await Promise.all(
-    officialResults.map(async (result) => ({
+    targets.map(async (result) => ({
       url: result.url,
       pageSnippet: await fetchPageSnippet(result.url, query)
     }))
@@ -679,111 +746,39 @@ async function fetchJsonWithTimeout(url, options = {}, timeoutMs = PROVIDER_TIME
 function buildSearchProviders(classification) {
   const providers = [];
 
-  if (TAVILY_API_KEY) {
-    providers.push(["tavily", async (query) => {
-      const data = await fetchJsonWithTimeout("https://api.tavily.com/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          api_key: TAVILY_API_KEY,
-          query,
-          topic: classification.category === "news" ? "news" : "general",
-          search_depth: "basic",
-          max_results: MAX_RESULTS,
-          include_answer: false,
-          include_images: false,
-          include_raw_content: false
-        })
-      });
+  if (ENABLE_DDG_PROVIDER) {
+    providers.push(["duckduckgo-html", async (query) => searchDuckDuckGoHtml(query)]);
+    providers.push(["duckduckgo-lite", async (query) => searchDuckDuckGoLite(query)]);
+  }
+
+  if (ENABLE_SEARXNG_PROVIDER && SEARXNG_BASE_URL) {
+    providers.push(["searxng", async (query) => {
+      const endpoint = new URL("/search", SEARXNG_BASE_URL).toString();
+      const data = await fetchJsonWithTimeout(
+        `${endpoint}?q=${encodeURIComponent(query)}&format=json&language=pt-BR&safesearch=0&categories=general`,
+        {
+          headers: {
+            "Accept": "application/json"
+          }
+        }
+      );
 
       return prioritizeResults(
         (data?.results || []).map((item) =>
           makeResult({
             title: item.title,
             url: item.url,
-            snippet: item.content,
-            provider: "tavily",
-            source: item.url
+            snippet: item.content || item.snippet,
+            provider: "searxng",
+            source: item.engine || item.url
           })
         )
       );
     }]);
   }
 
-  if (SERPER_API_KEY) {
-    providers.push(["serper", async (query) => {
-      const data = await fetchJsonWithTimeout("https://google.serper.dev/search", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-API-KEY": SERPER_API_KEY
-        },
-        body: JSON.stringify({
-          q: query,
-          gl: "br",
-          hl: "pt-br",
-          num: MAX_RESULTS
-        })
-      });
-
-      return prioritizeResults(
-        (data?.organic || []).map((item) =>
-          makeResult({
-            title: item.title,
-            url: item.link,
-            snippet: item.snippet,
-            provider: "serper",
-            source: item.link
-          })
-        )
-      );
-    }]);
-  }
-
-  if (BRAVE_SEARCH_API_KEY) {
-    providers.push(["brave", async (query) => {
-      const data = await fetchJsonWithTimeout(
-        `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${MAX_RESULTS}&search_lang=pt-br&country=BR`,
-        {
-          headers: {
-            "Accept": "application/json",
-            "X-Subscription-Token": BRAVE_SEARCH_API_KEY
-          }
-        }
-      );
-
-      return prioritizeResults(
-        (data?.web?.results || []).map((item) =>
-          makeResult({
-            title: item.title,
-            url: item.url,
-            snippet: item.description,
-            provider: "brave",
-            source: item.url
-          })
-        )
-      );
-    }]);
-  }
-
-  if (GOOGLE_CSE_API_KEY && GOOGLE_CSE_CX) {
-    providers.push(["google-cse", async (query) => {
-      const data = await fetchJsonWithTimeout(
-        `https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(GOOGLE_CSE_API_KEY)}&cx=${encodeURIComponent(GOOGLE_CSE_CX)}&q=${encodeURIComponent(query)}&hl=pt-BR&num=${Math.min(MAX_RESULTS, 10)}`
-      );
-
-      return prioritizeResults(
-        (data?.items || []).map((item) =>
-          makeResult({
-            title: item.title,
-            url: item.link,
-            snippet: item.snippet,
-            provider: "google-cse",
-            source: item.displayLink || item.link
-          })
-        )
-      );
-    }]);
+  if (ENABLE_PLAYWRIGHT_PROVIDER) {
+    providers.push(["playwright", async (query) => searchWithPlaywright(query)]);
   }
 
   return providers;
@@ -909,6 +904,10 @@ async function searchGoogleNewsRss(query) {
 }
 
 async function searchWithPlaywright(query) {
+  if (typeof global.__VESTORA_PLAYWRIGHT_SEARCH__ === "function") {
+    return prioritizeResults(await global.__VESTORA_PLAYWRIGHT_SEARCH__(query, { maxResults: MAX_RESULTS }));
+  }
+
   const { chromium } = await import("playwright");
   const browser = await chromium.launch({
     headless: true,
@@ -1016,8 +1015,10 @@ async function executeSearch(message, classification) {
       checkedAt: new Date().toISOString(),
       classification,
       externalSuccess: false,
+      usedWebSearch: false,
+      usedRealtimeData: false,
       results: [],
-      warning: "Nenhuma API de busca externa esta configurada no momento.",
+      warning: "Nenhum provider gratuito de busca externa esta configurado no momento.",
       errors: ["search-provider-not-configured"]
     };
   }
@@ -1048,7 +1049,7 @@ async function executeSearch(message, classification) {
   }
 
   const enriched = bestResults.length > 0
-    ? await enrichResultsWithPageSnippets(bestResults, chosenQuery)
+    ? await enrichResultsWithPageSnippets(bestResults.slice(0, MAX_RESULTS), chosenQuery)
     : [];
 
   return {
@@ -1058,7 +1059,9 @@ async function executeSearch(message, classification) {
     checkedAt: new Date().toISOString(),
     classification,
     externalSuccess: enriched.length > 0,
-    results: enriched,
+    usedWebSearch: enriched.length > 0,
+    usedRealtimeData: false,
+    results: enriched.slice(0, MAX_RESULTS),
     warning: enriched.length === 0
       ? "Nao foi possivel obter resultados atualizados suficientes na consulta externa."
       : undefined,
@@ -1081,6 +1084,8 @@ async function pesquisarInternet(message, options = {}) {
       searched: false,
       skipped: true,
       externalSuccess: false,
+      usedWebSearch: false,
+      usedRealtimeData: false,
       checkedAt: new Date().toISOString(),
       classification,
       results: []
@@ -1088,7 +1093,7 @@ async function pesquisarInternet(message, options = {}) {
   }
 
   const cacheKey = getCacheKey(message, classification);
-  const cached = getCachedSearch(cacheKey, classification.cacheTtlMs);
+  const cached = getCachedSearch(cacheKey, WEB_SEARCH_CACHE_TTL_MS);
   if (cached) {
     logSearch("info", "cache-hit", {
       category: classification.category,
@@ -1133,6 +1138,8 @@ async function pesquisarInternet(message, options = {}) {
         checkedAt: new Date().toISOString(),
         classification,
         externalSuccess: false,
+        usedWebSearch: false,
+        usedRealtimeData: false,
         results: [],
         warning: "Falha na pesquisa online no momento.",
         errors: [error.message]
@@ -1227,6 +1234,8 @@ async function enrichWithRealtimeData(internetResults, message) {
     ...internetResults,
     engine: internetResults.engine === "unavailable" ? "realtime-api" : internetResults.engine,
     externalSuccess: true,
+    usedWebSearch: Boolean(internetResults.usedWebSearch || (internetResults.results || []).length > 0),
+    usedRealtimeData: true,
     warning: undefined,
     checkedAt: new Date().toISOString(),
     results: prioritizeResults([
@@ -1248,5 +1257,6 @@ module.exports = {
   isRealtimePriceQuestion,
   enrichWithRealtimeData,
   fetchRealtimePrices,
-  clearSearchCaches
+  clearSearchCaches,
+  shouldAttachRealtimeData
 };

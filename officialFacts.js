@@ -63,6 +63,35 @@ async function fetchText(url) {
   }
 }
 
+async function fetchHtml(url) {
+  const cached = cache.get(`${url}::html`);
+  if (cached && Date.now() - cached.createdAt < CACHE_TTL_MS) {
+    return cached.html;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "Vestora/1.0 (+https://github.com/Pepeu2010/vestora)"
+      },
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      throw new Error(`Fonte retornou HTTP ${response.status}`);
+    }
+
+    const html = await response.text();
+    cache.set(`${url}::html`, { html, createdAt: Date.now() });
+    return html;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function fetchJson(url) {
   const cached = cache.get(url);
   if (cached && Date.now() - cached.createdAt < CACHE_TTL_MS) {
@@ -137,6 +166,21 @@ function isTaxOrGuaranteeQuestion(message) {
     "lca",
     "renda fixa"
   ].some((term) => normalized.includes(normalizeText(term)));
+}
+
+function isSalaryMinimumQuestion(message) {
+  const normalized = normalizeText(message);
+  return normalized.includes("salario minimo") || normalized.includes("salário mínimo");
+}
+
+function isIrfTableQuestion(message) {
+  const normalized = normalizeText(message);
+  return (
+    normalized.includes("imposto de renda") ||
+    normalized.includes("irpf") ||
+    normalized.includes("tabela do ir") ||
+    normalized.includes("tabela ir")
+  );
 }
 
 function isTreasuryQuestion(message) {
@@ -254,6 +298,78 @@ function getTaxAndGuaranteeFacts() {
       {
         name: "FGC - Garantia Ordinaria",
         url: "https://www.fgc.org.br/garantia-fgc/sobre-a-garantia-fgc"
+      }
+    ]
+  };
+}
+
+async function getSalaryMinimumFacts() {
+  const url = "https://www.gov.br/planalto/pt-br/acompanhe-o-planalto/noticias/2025/12/publicado-decreto-que-reajusta-salario-minimo-para-r-1-621-a-partir-de-1o-de-janeiro";
+  const html = await fetchHtml(url);
+  const title = (html.match(/og:title" content="([^"]+)"/i) || [])[1] || "";
+  const description = (html.match(/og:description" content="([^"]+)"/i) || [])[1] || "";
+  const combined = `${title}. ${description}`;
+  const valueMatch = combined.match(/R\$\s*1\.621\b/);
+
+  return {
+    topic: "Salario minimo 2026",
+    verified: Boolean(valueMatch),
+    checkedAt: new Date().toISOString(),
+    instruction:
+      "Use esta referencia oficial para responder sobre salario minimo de 2026. Se a pergunta for sobre liquido, desconto ou categoria profissional, diga que pode variar.",
+    facts: valueMatch
+      ? {
+          currentValue: "R$ 1.621,00",
+          startsAt: "01/01/2026",
+          summary: stripHtml(combined),
+          source: "Planalto"
+        }
+      : null,
+    sources: [
+      {
+        name: "Planalto - reajuste do salario minimo",
+        url,
+        snippet: stripHtml(combined)
+      }
+    ]
+  };
+}
+
+async function getIrf2026Facts() {
+  const url = "https://www.gov.br/receitafederal/pt-br/assuntos/meu-imposto-de-renda/tabelas/2026";
+  const html = await fetchHtml(url);
+  const tableStart = html.indexOf("Tabela de Incidência Mensal");
+  const section = tableStart >= 0 ? html.slice(tableStart, tableStart + 5000) : html;
+  const rowMatches = [...section.matchAll(/<tr>\s*<td>([\s\S]*?)<\/td>\s*<td[^>]*>([\s\S]*?)<\/td>\s*<td[^>]*>([\s\S]*?)<\/td>\s*<\/tr>/gi)];
+  const monthlyTable = rowMatches
+    .map((match) => ({
+      faixa: stripHtml(match[1]),
+      aliquota: stripHtml(match[2]),
+      deducao: stripHtml(match[3])
+    }))
+    .filter((row) => row.faixa && row.aliquota !== "Imposto" && row.deducao !== "Imposto")
+    .slice(0, 5);
+
+  const dependentDeduction = stripHtml((section.match(/Dedução mensal por dependente:\s*([^<]+)/i) || [])[1] || "");
+  const simplifiedDiscount = stripHtml((section.match(/Limite mensal de desconto simplificado:\s*([^<]+)/i) || [])[1] || "");
+
+  return {
+    topic: "Tabela IRPF 2026",
+    verified: monthlyTable.length >= 5,
+    checkedAt: new Date().toISOString(),
+    instruction:
+      "Use esta tabela mensal oficial da Receita Federal para 2026. Se a pergunta for sobre ajuste anual ou desconto simplificado, cite isso separadamente.",
+    facts: {
+      year: 2026,
+      monthlyTable,
+      dependentDeduction,
+      simplifiedDiscount,
+      source: "Receita Federal"
+    },
+    sources: [
+      {
+        name: "Receita Federal - Tabelas do Imposto de Renda 2026",
+        url
       }
     ]
   };
@@ -444,6 +560,16 @@ async function getOfficialFactsForMessage(message, options = {}) {
 
   if (isTaxOrGuaranteeQuestion(message)) {
     facts.push(getTaxAndGuaranteeFacts());
+  }
+
+  if (isSalaryMinimumQuestion(message)) {
+    const salaryFacts = await getSalaryMinimumFacts().catch(() => null);
+    if (salaryFacts) facts.push(salaryFacts);
+  }
+
+  if (isIrfTableQuestion(message)) {
+    const irFacts = await getIrf2026Facts().catch(() => null);
+    if (irFacts) facts.push(irFacts);
   }
 
   if (facts.length === 0) {

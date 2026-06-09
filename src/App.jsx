@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/react";
 
@@ -278,117 +280,158 @@ function renderTable(lines, startIndex) {
   };
 }
 
-function renderMarkdown(text) {
-  const raw = String(text || "")
+function safeExternalHref(href) {
+  if (!href) return "";
+
+  try {
+    const parsed = new URL(href, window.location.origin);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return parsed.toString();
+    }
+  } catch {}
+
+  return "";
+}
+
+function prepareMarkdownForRender(text) {
+  return String(text || "")
     .replace(/<think\b[^>]*>[\s\S]*?(?:<\/think>|$)/gi, "")
     .replace(/<\/?think\b[^>]*>/gi, "")
     .replace(/<reasoning\b[^>]*>[\s\S]*?(?:<\/reasoning>|$)/gi, "")
     .replace(/<\/?reasoning\b[^>]*>/gi, "")
+    .replace(/<a\b[^>]*href=(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi, (_, __, href, label) => {
+      const cleanLabel = String(label || "").replace(/<[^>]+>/g, "").trim() || href;
+      return `[${cleanLabel}](${href})`;
+    })
+    .replace(/<\/?(?:div|span|p|a|strong|em|code|pre|table|thead|tbody|tr|th|td|ul|ol|li|blockquote|br)[^>]*>/gi, "")
+    .replace(/^\s*(?:target|rel|class|style|title)=["'][^"']*["']\s*$/gim, "")
+    .replace(/\s+(?:target|rel|class|style|title)=["'][^"']*["']/gi, "")
     .replace(/^\s*(?:thought:|reasoning:|analysis:|thinking:)\s.*$/gim, "")
-    .replace(/^\s*(?:here(?:'|’)s| is)?\s+(?:my\s+)?(?:reasoning|analysis|thought process)[\s:.-]*$/gim, "")
+    .replace(/^\s*(?:here(?:'|’)s|here is)\s+(?:my\s+)?(?:reasoning|analysis|thought process)[\s:.-]*$/gim, "")
     .replace(/^\s*(?:internal\s+)?(?:reasoning|analysis|thinking)[\s:.-]*$/gim, "")
     .replace(/^\s*(?:let(?:'|’)s|i(?:'|’)ll|i will)\s+think(?:\s+step by step)?[\s:.-]*.*$/gim, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#039;/gi, "'")
     .trim();
-  const lines = raw.split(/\r?\n/);
-  const html = [];
-  let listItems = [];
-  let orderedItems = [];
-  let inCodeBlock = false;
-  let codeLines = [];
-  let codeLanguage = "";
+}
 
-  function flushList() {
-    if (listItems.length > 0) {
-      html.push(`<ul>${listItems.join("")}</ul>`);
-      listItems = [];
-    }
-    if (orderedItems.length > 0) {
-      html.push(`<ol>${orderedItems.join("")}</ol>`);
-      orderedItems = [];
-    }
-  }
+function BotMessageContent({ text }) {
+  const prepared = prepareMarkdownForRender(text);
 
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index];
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      skipHtml
+      components={{
+        p: ({ children }) => <p>{children}</p>,
+        h1: ({ children }) => <h3>{children}</h3>,
+        h2: ({ children }) => <h3>{children}</h3>,
+        h3: ({ children }) => <h3>{children}</h3>,
+        a: ({ href, children }) => {
+          const safeHref = safeExternalHref(href);
+          if (!safeHref) {
+            return <span>{children}</span>;
+          }
 
-    // Fenced code blocks
-    if (line.trimStart().startsWith("```")) {
-      if (inCodeBlock) {
-        html.push(`<div class="code-block"><div class="code-block-header">${codeLanguage || "código"}</div><pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre></div>`);
-        codeLines = [];
-        codeLanguage = "";
-        inCodeBlock = false;
-      } else {
-        flushList();
-        inCodeBlock = true;
-        codeLanguage = line.trim().slice(3).trim();
-      }
-      continue;
-    }
-
-    if (inCodeBlock) {
-      codeLines.push(line);
-      continue;
-    }
-
-    const trimmed = line.trim();
-
-    if (!trimmed) {
-      flushList();
-      continue;
-    }
-
-    const table = renderTable(lines, index);
-    if (table) {
-      flushList();
-      html.push(table.html);
-      index = table.nextIndex - 1;
-      continue;
-    }
-
-    const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
-    if (heading) {
-      flushList();
-      html.push(`<h3>${formatInlineMarkdown(heading[2])}</h3>`);
-      continue;
-    }
-
-    const bullet = trimmed.match(/^[-*]\s+(.+)$/);
-    if (bullet) {
-      orderedItems = [];
-      listItems.push(`<li>${formatInlineMarkdown(bullet[1])}</li>`);
-      continue;
-    }
-
-    const ordered = trimmed.match(/^\d+\.\s+(.+)$/);
-    if (ordered) {
-      listItems = [];
-      orderedItems.push(`<li>${formatInlineMarkdown(ordered[1])}</li>`);
-      continue;
-    }
-
-    // Blockquote
-    if (trimmed.startsWith("> ")) {
-      flushList();
-      html.push(`<blockquote class="message-quote">${formatInlineMarkdown(trimmed.slice(2))}</blockquote>`);
-      continue;
-    }
-
-    flushList();
-    html.push(`<p>${formatInlineMarkdown(trimmed)}</p>`);
-  }
-
-  // Flush any unclosed code block
-  if (inCodeBlock && codeLines.length > 0) {
-    html.push(`<div class="code-block"><pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre></div>`);
-  }
-
-  flushList();
-  return html.join("");
+          return (
+            <a
+              href={safeHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="message-link"
+            >
+              {children}
+            </a>
+          );
+        },
+        blockquote: ({ children }) => <blockquote className="message-quote">{children}</blockquote>,
+        table: ({ children }) => (
+          <div className="table-wrap">
+            <table>{children}</table>
+          </div>
+        ),
+        th: ({ children }) => <th>{children}</th>,
+        td: ({ children }) => <td>{children}</td>,
+        pre: ({ children }) => <div className="code-block"><pre>{children}</pre></div>,
+        code: ({ inline, className, children }) =>
+          inline ? (
+            <code className="inline-code">{children}</code>
+          ) : (
+            <code className={className}>{children}</code>
+          )
+      }}
+    >
+      {prepared}
+    </ReactMarkdown>
+  );
 }
 
 function MessageSources({ sources }) {
-  return null;
+  const items = Array.isArray(sources) ? sources.filter((source) => source?.url) : [];
+  const [expanded, setExpanded] = useState(false);
+
+  if (items.length === 0) return null;
+
+  return (
+    <div className="message-sources">
+      <button
+        type="button"
+        className="message-sources-toggle"
+        onClick={() => setExpanded((current) => !current)}
+        aria-expanded={expanded}
+      >
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M12 3v18" />
+          <path d="M3 12h18" />
+        </svg>
+        Fontes
+        <span className="message-sources-count">{items.length}</span>
+        <svg
+          viewBox="0 0 24 24"
+          width="14"
+          height="14"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={`message-sources-chevron${expanded ? " open" : ""}`}
+          aria-hidden="true"
+        >
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+
+      <div className={`message-sources-list${expanded ? " expanded" : ""}`}>
+        {items.map((source, index) => {
+          const safeHref = safeExternalHref(source.url);
+          if (!safeHref) return null;
+
+          const domain = source.domain || safeHref.replace(/^https?:\/\//, "").split("/")[0];
+          const shortDomain = domain.replace(/^www\./, "");
+          const faviconLabel = shortDomain.slice(0, 2).toUpperCase();
+
+          return (
+            <a
+              key={`${safeHref}-${index}`}
+              href={safeHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="message-source-item"
+            >
+              <span className="message-source-favicon" aria-hidden="true">{faviconLabel}</span>
+              <span className="message-source-info">
+                <span className="message-source-title">{source.title || shortDomain}</span>
+                <span className="message-source-url">{shortDomain}</span>
+              </span>
+            </a>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function MessageBubble({ message, onRetry }) {
@@ -407,10 +450,9 @@ function MessageBubble({ message, onRetry }) {
   if (message.role === "bot") {
     return (
       <div className="message-bot-wrap">
-        <article
-          className={`message bot${message.hasError ? " has-error" : ""}`}
-          dangerouslySetInnerHTML={{ __html: renderMarkdown(message.text) }}
-        />
+        <article className={`message bot${message.hasError ? " has-error" : ""}`}>
+          <BotMessageContent text={message.text} />
+        </article>
         {message.hasError && onRetry && message.retryFor && (
           <button
             className="retry-button"
@@ -1331,6 +1373,13 @@ export default function App() {
 
             if (event.type === "sources") {
               streamSources = event.sources || [];
+              updateConversation(activeConversationId, (conversation) => ({
+                messages: conversation.messages.map((message) =>
+                  message.id === botMsgId ? { ...message, sources: streamSources } : message
+                )
+              }));
+            } else if (event.type === "meta") {
+              streamSources = event.sources || streamSources;
             } else if (event.type === "chunk") {
               streamText += event.text;
               updateConversation(activeConversationId, (conversation) => ({

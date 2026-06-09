@@ -6,6 +6,21 @@ function stripTaggedReasoning(text) {
     .replace(/<\/?reasoning\b[^>]*>/gi, "");
 }
 
+function stripHtmlArtifacts(text) {
+  return String(text || "")
+    .replace(/<a\b[^>]*href=(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi, (_, __, href, label) => {
+      const cleanLabel = String(label || "").replace(/<[^>]+>/g, "").trim() || href;
+      return `${cleanLabel} (${href})`;
+    })
+    .replace(/<\/?(?:div|span|p|a|strong|em|code|pre|table|thead|tbody|tr|th|td|ul|ol|li|blockquote|br)[^>]*>/gi, "")
+    .replace(/^\s*(?:target|rel|class|style|title)=["'][^"']*["']\s*$/gim, "")
+    .replace(/\s+(?:target|rel|class|style|title)=["'][^"']*["']/gi, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#039;/gi, "'");
+}
+
 function stripInternalEnglishMeta(text) {
   let output = String(text || "");
 
@@ -38,6 +53,24 @@ function stripInternalEnglishMeta(text) {
     .replace(/^\s*i will\s+(?:think|reason)\s+.*$/gim, "");
 }
 
+function stripContradictoryLeadIn(text) {
+  const input = String(text || "").trim();
+  const patterns = [
+    /^\s*(?:nao|não)\s+(?:sei|consigo|consegui)\b[^\n.!?]*(?:[.!?]+)?\s*/i,
+    /^\s*(?:desculpe,?\s*)?(?:nao|não)\s+foi\s+possivel\s+[^\n.!?]*(?:[.!?]+)?\s*/i
+  ];
+
+  for (const pattern of patterns) {
+    if (!pattern.test(input)) continue;
+    const stripped = input.replace(pattern, "").trim();
+    if (stripped && /[a-zà-ÿ0-9]/i.test(stripped)) {
+      return stripped;
+    }
+  }
+
+  return input;
+}
+
 function normalizeAnswerSpacing(text) {
   return String(text || "")
     .replace(/\n{3,}/g, "\n\n")
@@ -46,7 +79,15 @@ function normalizeAnswerSpacing(text) {
 }
 
 function sanitizeModelAnswer(text) {
-  return normalizeAnswerSpacing(stripInternalEnglishMeta(stripTaggedReasoning(text)));
+  return normalizeAnswerSpacing(
+    stripContradictoryLeadIn(
+      stripInternalEnglishMeta(
+        stripHtmlArtifacts(
+          stripTaggedReasoning(text)
+        )
+      )
+    )
+  );
 }
 
 module.exports = {

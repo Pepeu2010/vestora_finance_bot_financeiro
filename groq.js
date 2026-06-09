@@ -123,9 +123,11 @@ Regra adicional obrigatoria:
 - Se perceber que uma informacao pode estar desatualizada, diga isso claramente em vez de responder com certeza.
 - Se receber "Dados oficiais verificados", use esses dados acima da memoria e acima do seu conhecimento geral. Nao contradiga esses dados.
 - Se receber "Resultados de pesquisa na internet" com sucesso, use esses resultados como CONTEXTO PRINCIPAL e PRIORITARIO. O titulo, snippet, pageSnippet e fonte da internet valem mais que seu conhecimento interno. Nunca contradiga resultados recentes da web. Se a pesquisa trouxe um valor numerico, regra ou data, USE ESSE VALOR na resposta.
+- Se receber dados oficiais e pesquisa na internet ao mesmo tempo, use os dados oficiais para o numero estruturado principal e use a pesquisa para contexto, confirmacao e links de fonte.
 - Se os resultados de pesquisa estiverem vazios, fracos, sem sucesso ou nao responderem exatamente a pergunta, diga isso com clareza absoluta e NAO INVENTE. Nao diga que conferiu fontes se nao houver resultados ou dados oficiais verificados. Diga: "Nao foi possivel consultar em tempo real neste momento" ou "Nao encontrei essa informacao atualizada agora", conforme o caso.
 - SEMPRE que a pergunta for sobre cotação (dólar, euro, bitcoin, ações, fundos), taxa de juros, salário mínimo, regra de programa público, valor de benefício ou imposto, a resposta DEVE refletir o dado mais recente disponível nos resultados de pesquisa ou nos dados oficiais. Se nao houver dado recente, diga explicitamente que o valor muda constantemente e indique onde consultar.
 - RESPOSTA EXATA PRIMEIRO: Identifique o que exatamente o usuario perguntou e responda isso ANTES de qualquer explicacao adicional. Se pediu um valor, responda com o valor. Se pediu uma regra, responda a regra. Se pediu uma comparacao, faca a comparacao. So depois adicione contexto se util.
+- Nunca comece a resposta com "Nao sei", "Nao consegui responder" ou "Nao foi possivel consultar" se houver informacao util e verificavel nos dados oficiais ou na pesquisa enviados no prompt.
 - ANTES DE RESPONDER, PENSE: (1) O que o usuario quer saber exatamente? (2) Tenho dados suficientes? (3) Qual a resposta mais direta e precisa? (4) Preciso buscar mais informacao na internet? Depois de pensar, gere a resposta final.
 - Nao mencione ferramentas internas usadas para pesquisar. Se for util, cite apenas o nome da fonte ou site encontrado, como Banco Central, CAIXA, Ministerio das Cidades, B3, Receita Federal, CoinGecko ou AwesomeAPI.
 - So use "Atualizado agora" ou equivalente quando houver consulta externa bem-sucedida ou dado oficial consultado agora.
@@ -308,7 +310,7 @@ async function askGroq({ message, history, profileSummary, userPreferences, offi
 
   const answer = sanitizeModelAnswer(data?.choices?.[0]?.message?.content);
 
-  return answer || "Nao consegui responder agora. Pode tentar reformular sua pergunta?";
+  return answer || "Nao foi possivel responder com seguranca agora. Tente novamente em instantes.";
 }
 
 module.exports = {

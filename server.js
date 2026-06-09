@@ -100,7 +100,15 @@ app.use((req, res, next) => {
   if (origin && host) {
     try {
       const parsedOrigin = new URL(origin);
-      if (parsedOrigin.host !== host) {
+      const requestUrl = new URL(`${req.protocol}://${host}`);
+      const isLocalDev =
+        ["localhost", "127.0.0.1"].includes(parsedOrigin.hostname) &&
+        ["localhost", "127.0.0.1"].includes(requestUrl.hostname);
+
+      const sameHost = parsedOrigin.host === host;
+      const sameHostname = parsedOrigin.hostname === requestUrl.hostname;
+
+      if (!sameHost && !(isLocalDev && sameHostname)) {
         return res.status(403).json({ error: "Origem não permitida." });
       }
     } catch {
@@ -261,7 +269,89 @@ function validateDeviceId(deviceId) {
 }
 
 function finalizeAnswer(answer) {
-  return sanitizeModelAnswer(answer) || "Nao consegui responder agora. Pode tentar reformular sua pergunta?";
+  return sanitizeModelAnswer(answer) || "Nao foi possivel responder com seguranca agora. Tente novamente em instantes.";
+}
+
+function extractDomain(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+function normalizeSourceItem(source) {
+  if (!source || typeof source !== "object") return null;
+
+  const url = String(source.url || source.link || "").trim();
+  if (!url) return null;
+
+  return {
+    title: String(source.title || source.name || extractDomain(url) || "Fonte").trim(),
+    url,
+    domain: extractDomain(url)
+  };
+}
+
+function collectOfficialSources(officialFacts) {
+  const sources = [];
+
+  const visit = (node) => {
+    if (!node) return;
+
+    if (Array.isArray(node)) {
+      node.forEach(visit);
+      return;
+    }
+
+    if (typeof node !== "object") return;
+
+    if (Array.isArray(node.sources)) {
+      node.sources.forEach((source) => {
+        const normalized = normalizeSourceItem(source);
+        if (normalized) sources.push(normalized);
+      });
+    }
+
+    if (Array.isArray(node.facts)) {
+      node.facts.forEach(visit);
+    }
+  };
+
+  visit(officialFacts);
+  return sources;
+}
+
+function collectInternetSources(internetResults) {
+  return Array.isArray(internetResults?.results)
+    ? internetResults.results
+      .map((result) => normalizeSourceItem({
+        title: result.title || result.source,
+        url: result.url
+      }))
+      .filter(Boolean)
+    : [];
+}
+
+function buildResponseMeta({ officialFacts, internetResults }) {
+  const sources = [...collectInternetSources(internetResults), ...collectOfficialSources(officialFacts)];
+  const unique = [];
+  const seen = new Set();
+
+  for (const source of sources) {
+    if (!source?.url || seen.has(source.url)) continue;
+    seen.add(source.url);
+    unique.push(source);
+    if (unique.length >= 8) break;
+  }
+
+  return {
+    sources: unique,
+    usedRealtimeData: Boolean(internetResults?.usedRealtimeData),
+    usedWebSearch: Boolean(internetResults?.usedWebSearch),
+    updatedAt: internetResults?.checkedAt || officialFacts?.checkedAt || new Date().toISOString(),
+    warning: internetResults?.warning
+  };
 }
 
 function makeTitle(text) {
@@ -384,6 +474,8 @@ function tryQuickCalculator(text, session, officialFacts) {
   const profile = session.profile || {};
   const officialFactItems = Array.isArray(officialFacts?.facts) ? officialFacts.facts : [];
   const macroFacts = officialFactItems.find((fact) => fact.topic === "Indicadores economicos 2026");
+  const salaryFacts = officialFactItems.find((fact) => fact.topic === "Salario minimo 2026");
+  const irFacts = officialFactItems.find((fact) => fact.topic === "Tabela IRPF 2026");
 
   if (
     normalized.includes("minha casa minha vida") ||
@@ -416,6 +508,40 @@ function tryQuickCalculator(text, session, officialFacts) {
 
     lines.push("Esses indicadores mudam. Para aplicar dinheiro hoje, confirme a taxa no banco/corretora e veja liquidez, IR, IOF e risco.");
     return lines.join("\n");
+  }
+
+  if (normalized.includes("salario minimo") && salaryFacts?.facts?.currentValue) {
+    return [
+      `O salário mínimo atual é **${salaryFacts.facts.currentValue}**.`,
+      "Observação: esse é o valor nacional a partir de 1º de janeiro de 2026; pisos salariais por categoria podem ser diferentes.",
+      `Fonte: ${salaryFacts.facts.source} — consulta em ${new Date(salaryFacts.checkedAt || Date.now()).toLocaleString("pt-BR")}.`
+    ].join("\n\n");
+  }
+
+  if ((normalized.includes("imposto de renda") || normalized.includes("irpf") || normalized.includes("tabela do ir")) && irFacts?.facts?.monthlyTable?.length) {
+    const rows = irFacts.facts.monthlyTable
+      .map((row) => `| ${row.faixa} | ${row.aliquota} | ${row.deducao} |`)
+      .join("\n");
+    const tableBlock = [
+      "| Base de cálculo | Alíquota | Dedução |",
+      "| --- | --- | --- |",
+      rows
+    ].join("\n");
+
+    const extra = [];
+    if (irFacts.facts.dependentDeduction) {
+      extra.push(`Dedução mensal por dependente: **${irFacts.facts.dependentDeduction}**.`);
+    }
+    if (irFacts.facts.simplifiedDiscount) {
+      extra.push(`Limite mensal do desconto simplificado: **${irFacts.facts.simplifiedDiscount}**.`);
+    }
+
+    return [
+      "A tabela mensal oficial do IRPF em 2026 é esta:",
+      tableBlock,
+      extra.length > 0 ? `Observação: ${extra.join(" ")}` : "",
+      `Fonte: Receita Federal — consulta em ${new Date(irFacts.checkedAt || Date.now()).toLocaleString("pt-BR")}.`
+    ].filter(Boolean).join("\n\n");
   }
 
   if (normalized.includes("reserva") && (values[0] || profile.gastos)) {
@@ -1093,9 +1219,7 @@ async function prepareChatRequest(req, res) {
   const shouldAttemptWebSearch = (mustUseWebSearch || freshness.shouldSearch) && userSettings.buscaNaWeb !== false;
   const searchPromises = [];
   searchPromises.push(
-    userSettings.buscaConector !== false
-      ? getOfficialFactsForMessage(userMessage, { online: true }).catch(() => null)
-      : Promise.resolve(null)
+    getOfficialFactsForMessage(userMessage, { online: true }).catch(() => null)
   );
   searchPromises.push(
     shouldAttemptWebSearch
@@ -1116,6 +1240,10 @@ async function prepareChatRequest(req, res) {
   }
 
   const userPreferences = buildUserPreferences(userSettings);
+  const responseMeta = buildResponseMeta({
+    officialFacts,
+    internetResults: enrichedInternetResults
+  });
 
   return {
     session,
@@ -1125,7 +1253,8 @@ async function prepareChatRequest(req, res) {
     historyForGroq,
     officialFacts,
     enrichedInternetResults,
-    userPreferences
+    userPreferences,
+    responseMeta
   };
 }
 
@@ -1137,7 +1266,7 @@ app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
     const prepared = await prepareChatRequest(req, res);
     if (!prepared) return;
 
-    const { session, conversationId, userMessage, userSettings, historyForGroq, officialFacts, enrichedInternetResults, userPreferences } = prepared;
+    const { session, conversationId, userMessage, userSettings, historyForGroq, officialFacts, enrichedInternetResults, userPreferences, responseMeta } = prepared;
 
     // Try quick calculator first
     if (userSettings.respostasRapidas !== false) {
@@ -1149,7 +1278,7 @@ app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
         await saveCloudMessage({ conversationId, role: "model", content: safeAnswer });
         console.log(`[${now()}] [${session.id}] Resposta por calculadora simples.`);
 
-        return res.json({ sessionId: session.id, conversationId, answer: safeAnswer });
+        return res.json({ sessionId: session.id, conversationId, answer: safeAnswer, ...responseMeta });
       }
     }
 
@@ -1167,7 +1296,7 @@ app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
     await saveCloudMessage({ conversationId, role: "model", content: answer });
     console.log(`[${now()}] [${session.id}] Resposta enviada.`);
 
-    res.json({ sessionId: session.id, conversationId, answer });
+    res.json({ sessionId: session.id, conversationId, answer, ...responseMeta });
   } catch (error) {
     console.error(`[${now()}] Erro:`, error.message);
     res.status(500).json({ error: "Tive um problema ao gerar a resposta. Tente novamente em instantes." });
@@ -1182,7 +1311,7 @@ app.post("/api/chat/stream", requireAuth, chatLimiter, async (req, res) => {
     const prepared = await prepareChatRequest(req, res);
     if (!prepared) return;
 
-    const { session, conversationId, userMessage, userSettings, historyForGroq, officialFacts, enrichedInternetResults, userPreferences } = prepared;
+    const { session, conversationId, userMessage, userSettings, historyForGroq, officialFacts, enrichedInternetResults, userPreferences, responseMeta } = prepared;
 
     // Try quick calculator first (non-streaming fast path)
     if (userSettings.respostasRapidas !== false) {
@@ -1201,6 +1330,10 @@ app.post("/api/chat/stream", requireAuth, chatLimiter, async (req, res) => {
         res.setHeader("X-Accel-Buffering", "no");
         res.flushHeaders();
 
+        if (responseMeta.sources.length > 0) {
+          res.write(`data: ${JSON.stringify({ type: "sources", sources: responseMeta.sources })}\n\n`);
+        }
+        res.write(`data: ${JSON.stringify({ type: "meta", ...responseMeta })}\n\n`);
         res.write(`data: ${JSON.stringify({ type: "chunk", text: safeAnswer })}\n\n`);
         res.write(`data: ${JSON.stringify({ type: "done", conversationId })}\n\n`);
         res.end();
@@ -1246,6 +1379,10 @@ app.post("/api/chat/stream", requireAuth, chatLimiter, async (req, res) => {
     console.log(`[${now()}] [${session.id}] Resposta stream enviada.`);
 
     // Signal completion
+    if (responseMeta.sources.length > 0) {
+      res.write(`data: ${JSON.stringify({ type: "sources", sources: responseMeta.sources })}\n\n`);
+    }
+    res.write(`data: ${JSON.stringify({ type: "meta", ...responseMeta })}\n\n`);
     res.write(`data: ${JSON.stringify({ type: "done", conversationId })}\n\n`);
     res.end();
   } catch (error) {

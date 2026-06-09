@@ -6,19 +6,19 @@ function loadSearchModule(env = {}) {
   delete require.cache[modulePath];
 
   const previous = {
-    TAVILY_API_KEY: process.env.TAVILY_API_KEY,
-    SERPER_API_KEY: process.env.SERPER_API_KEY,
-    BRAVE_SEARCH_API_KEY: process.env.BRAVE_SEARCH_API_KEY,
-    GOOGLE_CSE_API_KEY: process.env.GOOGLE_CSE_API_KEY,
-    GOOGLE_CSE_CX: process.env.GOOGLE_CSE_CX
+    WEB_SEARCH_CACHE_TTL_MS: process.env.WEB_SEARCH_CACHE_TTL_MS,
+    SEARXNG_BASE_URL: process.env.SEARXNG_BASE_URL,
+    ENABLE_DDG_PROVIDER: process.env.ENABLE_DDG_PROVIDER,
+    ENABLE_SEARXNG_PROVIDER: process.env.ENABLE_SEARXNG_PROVIDER,
+    ENABLE_PLAYWRIGHT_PROVIDER: process.env.ENABLE_PLAYWRIGHT_PROVIDER
   };
 
   Object.assign(process.env, {
-    TAVILY_API_KEY: "",
-    SERPER_API_KEY: "",
-    BRAVE_SEARCH_API_KEY: "",
-    GOOGLE_CSE_API_KEY: "",
-    GOOGLE_CSE_CX: "",
+    WEB_SEARCH_CACHE_TTL_MS: "900000",
+    SEARXNG_BASE_URL: "",
+    ENABLE_DDG_PROVIDER: "true",
+    ENABLE_SEARXNG_PROVIDER: "true",
+    ENABLE_PLAYWRIGHT_PROVIDER: "true",
     ...env
   });
 
@@ -28,6 +28,7 @@ function loadSearchModule(env = {}) {
     restore() {
       Object.assign(process.env, previous);
       delete require.cache[modulePath];
+      delete global.__VESTORA_PLAYWRIGHT_SEARCH__;
     }
   };
 }
@@ -63,40 +64,39 @@ test("nao dispara busca para pergunta explicativa estavel", () => {
   }
 });
 
-test("usa cache para evitar pesquisa repetida em curto periodo", async () => {
-  const { pesquisarInternet, clearSearchCaches, restore } = loadSearchModule({
-    BRAVE_SEARCH_API_KEY: "test-brave-key"
-  });
+test("usa cache de 15 minutos para evitar pesquisa repetida em curto periodo", async () => {
+  const { pesquisarInternet, clearSearchCaches, restore } = loadSearchModule();
   clearSearchCaches();
 
   const originalFetch = global.fetch;
   const calls = [];
 
   global.fetch = async (url) => {
-    calls.push(String(url));
+    const target = String(url);
+    calls.push(target);
 
-    if (String(url).startsWith("https://api.search.brave.com/res/v1/web/search")) {
-      return makeJsonResponse({
-        web: {
-          results: [
-            {
-              title: "Conversor de Moedas - Banco Central",
-              url: "https://www.bcb.gov.br/conversao",
-              description: "Cotacao oficial do dolar."
-            }
-          ]
-        }
+    if (target.startsWith("https://duckduckgo.com/html/")) {
+      return new Response(`
+        <html><body>
+          <div class="result">
+            <a class="result__a" href="https://www.bcb.gov.br/conversao">Conversor de Moedas - Banco Central</a>
+            <div class="result__snippet">Cotacao oficial do dolar.</div>
+          </div>
+        </body></html>
+      `, {
+        status: 200,
+        headers: { "content-type": "text/html; charset=UTF-8" }
       });
     }
 
-    if (String(url) === "https://www.bcb.gov.br/conversao") {
+    if (target === "https://www.bcb.gov.br/conversao") {
       return new Response("<html><body>Cotacao oficial do dolar no Banco Central</body></html>", {
         status: 200,
         headers: { "content-type": "text/html; charset=UTF-8" }
       });
     }
 
-    throw new Error(`URL nao esperada no teste: ${url}`);
+    throw new Error(`URL nao esperada no teste: ${target}`);
   };
 
   try {
@@ -107,7 +107,7 @@ test("usa cache para evitar pesquisa repetida em curto periodo", async () => {
     assert.equal(first.externalSuccess, true);
     assert.equal(second.fromCache, true);
     assert.equal(
-      calls.filter((url) => url.startsWith("https://api.search.brave.com/res/v1/web/search")).length,
+      calls.filter((url) => url.startsWith("https://duckduckgo.com/html/")).length,
       1
     );
   } finally {
@@ -116,51 +116,51 @@ test("usa cache para evitar pesquisa repetida em curto periodo", async () => {
   }
 });
 
-test("faz fallback para outro provider de API quando o primeiro falha", async () => {
+test("faz fallback do DuckDuckGo para o SearXNG quando necessario", async () => {
   const { pesquisarInternet, clearSearchCaches, restore } = loadSearchModule({
-    TAVILY_API_KEY: "test-tavily-key",
-    BRAVE_SEARCH_API_KEY: "test-brave-key"
+    SEARXNG_BASE_URL: "https://search.exemplo.local"
   });
   clearSearchCaches();
 
   const originalFetch = global.fetch;
 
   global.fetch = async (url) => {
-    if (String(url) === "https://api.tavily.com/search") {
-      return new Response(JSON.stringify({ error: "temporarily unavailable" }), {
-        status: 503,
-        headers: { "content-type": "application/json" }
-      });
+    const target = String(url);
+
+    if (target.startsWith("https://duckduckgo.com/html/")) {
+      return new Response("falha temporaria", { status: 503 });
     }
 
-    if (String(url).startsWith("https://api.search.brave.com/res/v1/web/search")) {
+    if (target.startsWith("https://lite.duckduckgo.com/lite/")) {
+      return new Response("falha temporaria", { status: 503 });
+    }
+
+    if (target.startsWith("https://search.exemplo.local/search?")) {
       return makeJsonResponse({
-        web: {
-          results: [
-            {
-              title: "Presidencia da Republica",
-              url: "https://www.gov.br/planalto",
-              description: "Informacoes oficiais do governo federal."
-            }
-          ]
-        }
+        results: [
+          {
+            title: "Receita Federal - Tabelas 2026",
+            url: "https://www.gov.br/receitafederal/pt-br/assuntos/meu-imposto-de-renda/tabelas/2026",
+            content: "Tabela oficial do IRPF 2026."
+          }
+        ]
       });
     }
 
-    if (String(url) === "https://www.gov.br/planalto") {
-      return new Response("<html><body>Presidencia da Republica Federativa do Brasil</body></html>", {
+    if (target === "https://www.gov.br/receitafederal/pt-br/assuntos/meu-imposto-de-renda/tabelas/2026") {
+      return new Response("<html><body>Tabela oficial do IRPF 2026</body></html>", {
         status: 200,
         headers: { "content-type": "text/html; charset=UTF-8" }
       });
     }
 
-    throw new Error(`URL nao esperada no teste: ${url}`);
+    throw new Error(`URL nao esperada no teste: ${target}`);
   };
 
   try {
-    const result = await pesquisarInternet("Quem e o presidente do Brasil atualmente?");
+    const result = await pesquisarInternet("Qual e a tabela de faixas do Imposto de Renda em 2026?");
     assert.equal(result.results.length > 0, true);
-    assert.equal(result.engine, "brave");
+    assert.equal(result.engine, "searxng");
     assert.equal(result.externalSuccess, true);
     assert.match(result.results[0].url, /gov\.br/);
   } finally {
@@ -169,14 +169,119 @@ test("faz fallback para outro provider de API quando o primeiro falha", async ()
   }
 });
 
-test("falha com honestidade quando nenhuma API de busca esta configurada", async () => {
-  const { pesquisarInternet, restore } = loadSearchModule();
+test("faz fallback final para Playwright quando DuckDuckGo e SearXNG falham", async () => {
+  const { pesquisarInternet, clearSearchCaches, restore } = loadSearchModule({
+    SEARXNG_BASE_URL: "https://search.exemplo.local"
+  });
+  clearSearchCaches();
+
+  const originalFetch = global.fetch;
+
+  global.fetch = async (url) => {
+    const target = String(url);
+
+    if (target.startsWith("https://duckduckgo.com/html/")) {
+      return new Response("falha temporaria", { status: 503 });
+    }
+
+    if (target.startsWith("https://lite.duckduckgo.com/lite/")) {
+      return new Response("falha temporaria", { status: 503 });
+    }
+
+    if (target.startsWith("https://search.exemplo.local/search?")) {
+      return new Response(JSON.stringify({ error: "offline" }), {
+        status: 503,
+        headers: { "content-type": "application/json" }
+      });
+    }
+
+    if (target === "https://www.b3.com.br/pt_br/produtos-e-servicos/") {
+      return new Response("<html><body>Produtos e servicos B3</body></html>", {
+        status: 200,
+        headers: { "content-type": "text/html; charset=UTF-8" }
+      });
+    }
+
+    throw new Error(`URL nao esperada no teste: ${target}`);
+  };
+
+  global.__VESTORA_PLAYWRIGHT_SEARCH__ = async () => ([
+    {
+      title: "B3 - Produtos e servicos",
+      url: "https://www.b3.com.br/pt_br/produtos-e-servicos/",
+      snippet: "Informacoes do mercado financeiro brasileiro."
+    }
+  ]);
+
+  try {
+    const result = await pesquisarInternet("Quais sao as informacoes mais recentes sobre a B3?");
+    assert.equal(result.results.length > 0, true);
+    assert.equal(result.engine, "playwright");
+    assert.equal(result.externalSuccess, true);
+  } finally {
+    global.fetch = originalFetch;
+    restore();
+  }
+});
+
+test("retorna no maximo 5 resultados deduplicados", async () => {
+  const { pesquisarInternet, clearSearchCaches, restore } = loadSearchModule();
+  clearSearchCaches();
+
+  const originalFetch = global.fetch;
+
+  global.fetch = async (url) => {
+    const target = String(url);
+
+    if (target.startsWith("https://duckduckgo.com/html/")) {
+      return new Response(`
+        <html><body>
+          ${Array.from({ length: 7 }).map((_, index) => `
+            <div class="result">
+              <a class="result__a" href="https://www.exemplo.com/noticia-${index < 2 ? 1 : index}">Resultado ${index}</a>
+              <div class="result__snippet">Trecho ${index}</div>
+            </div>
+          `).join("")}
+        </body></html>
+      `, {
+        status: 200,
+        headers: { "content-type": "text/html; charset=UTF-8" }
+      });
+    }
+
+    if (target.startsWith("https://www.exemplo.com/noticia-")) {
+      return new Response("<html><body>Conteudo limpo</body></html>", {
+        status: 200,
+        headers: { "content-type": "text/html; charset=UTF-8" }
+      });
+    }
+
+    throw new Error(`URL nao esperada no teste: ${target}`);
+  };
+
+  try {
+    const result = await pesquisarInternet("Ultimas noticias economicas do Brasil");
+    assert.equal(result.results.length <= 5, true);
+    assert.equal(new Set(result.results.map((item) => item.url)).size, result.results.length);
+  } finally {
+    global.fetch = originalFetch;
+    restore();
+  }
+});
+
+test("falha com honestidade quando todos os providers gratuitos estao desativados", async () => {
+  const { pesquisarInternet, restore } = loadSearchModule({
+    ENABLE_DDG_PROVIDER: "false",
+    ENABLE_SEARXNG_PROVIDER: "false",
+    ENABLE_PLAYWRIGHT_PROVIDER: "false"
+  });
+
   try {
     const result = await pesquisarInternet("Quais as ultimas noticias sobre a Selic?");
     assert.equal(result.searched, true);
     assert.equal(result.externalSuccess, false);
     assert.equal(result.results.length, 0);
-    assert.match(result.warning, /api de busca externa/i);
+    assert.match(result.warning, /provider gratuito/i);
   } finally {
     restore();
   }
@@ -237,7 +342,7 @@ test("remove aviso de indisponibilidade quando dados financeiros em tempo real s
       return makeJsonResponse([{ data: "05/06/2026", valor: "0.67" }]);
     }
 
-    throw new Error(`URL nao esperada no teste: ${url}`);
+    throw new Error(`URL nao esperada no teste: ${target}`);
   };
 
   try {
@@ -245,12 +350,14 @@ test("remove aviso de indisponibilidade quando dados financeiros em tempo real s
       searched: true,
       engine: "unavailable",
       externalSuccess: false,
+      usedWebSearch: false,
+      usedRealtimeData: false,
       results: [],
-      warning: "Nenhuma API de busca externa esta configurada no momento."
+      warning: "Nenhum provider gratuito de busca externa esta configurado no momento."
     }, "Qual a cotacao atual do dolar, euro, bitcoin e taxa selic hoje?");
 
     assert.equal(enriched.externalSuccess, true);
-    assert.equal(enriched.engine, "realtime-api");
+    assert.equal(enriched.usedRealtimeData, true);
     assert.equal(enriched.warning, undefined);
     assert.equal(enriched.results.length >= 4, true);
   } finally {
