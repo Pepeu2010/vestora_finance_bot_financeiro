@@ -9,7 +9,7 @@ const cookieParser = require("cookie-parser");
 const fs = require("fs");
 const path = require("path");
 const { askGroq, askGroqStream } = require("./groq");
-const { sanitizeModelAnswer } = require("./answerSanitizer");
+const { FRIENDLY_DATA_FALLBACK, sanitizeModelAnswer } = require("./answerSanitizer");
 const { getOfficialFactsForMessage } = require("./officialFacts");
 const {
   pesquisarInternet,
@@ -269,7 +269,7 @@ function validateDeviceId(deviceId) {
 }
 
 function finalizeAnswer(answer) {
-  return sanitizeModelAnswer(answer) || "Nao foi possivel responder com seguranca agora. Tente novamente em instantes.";
+  return sanitizeModelAnswer(answer) || FRIENDLY_DATA_FALLBACK;
 }
 
 function extractDomain(url) {
@@ -349,8 +349,7 @@ function buildResponseMeta({ officialFacts, internetResults }) {
     sources: unique,
     usedRealtimeData: Boolean(internetResults?.usedRealtimeData),
     usedWebSearch: Boolean(internetResults?.usedWebSearch),
-    updatedAt: internetResults?.checkedAt || officialFacts?.checkedAt || new Date().toISOString(),
-    warning: internetResults?.warning
+    updatedAt: internetResults?.checkedAt || officialFacts?.checkedAt || new Date().toISOString()
   };
 }
 

@@ -9,19 +9,12 @@ const CONVERSATIONS_KEY = "vestora-conversations";
 const CURRENT_CONVERSATION_KEY = "vestora-current-conversation";
 const SETTINGS_KEY = "vestora-settings";
 const AUTH_TRANSITION_MS = 420;
+const CHAT_FALLBACK_MESSAGE = "Não consegui obter dados atualizados neste momento. Tente novamente em alguns minutos.";
 
 const QUICK_PROMPTS = [
   {
-    label: "Plano financeiro",
-    prompt: "Quero montar um plano financeiro pessoal. Quais dados você precisa para me orientar com clareza?"
-  },
-  {
-    label: "Organizar patrimônio",
-    prompt: "Quero organizar meu patrimônio e minhas prioridades financeiras. Como começamos?"
-  },
-  {
-    label: "Financiamento",
-    prompt: "Quero analisar um financiamento. Minha renda é R$ , entrada R$ , valor do bem R$ e prazo pretendido é de ."
+    label: "Organizar minhas finanças",
+    prompt: "Quero organizar minhas finanças pessoais. Quais dados você precisa para me orientar com clareza?"
   },
   {
     label: "Investir melhor",
@@ -32,8 +25,16 @@ const QUICK_PROMPTS = [
     prompt: "Quero sair das dívidas. Tenho dívidas de R$ , juros aproximados de ao mês e renda de R$ ."
   },
   {
-    label: "Reserva",
-    prompt: "Quero montar uma reserva de emergência premium e eficiente. Meus gastos mensais são R$ ."
+    label: "Criar reserva de emergência",
+    prompt: "Quero criar uma reserva de emergência. Meus gastos mensais são R$ ."
+  },
+  {
+    label: "Cotação do dólar",
+    prompt: "Qual é a cotação atual do dólar hoje em reais?"
+  },
+  {
+    label: "Bitcoin hoje",
+    prompt: "Qual é a cotação atual do Bitcoin em reais e em dólares?"
   }
 ];
 
@@ -42,13 +43,13 @@ const SHORTCUT_ACTIONS = [
   {
     id: "salario-minimo",
     icon: "💼",
-    label: "Salário Mínimo",
+    label: "Salário mínimo",
     prompt: "Qual é o valor atual do salário mínimo no Brasil em 2026?"
   },
   {
     id: "dolar-hoje",
     icon: "💵",
-    label: "Dólar Hoje",
+    label: "Dólar hoje",
     prompt: "Qual é a cotação atual do dólar hoje em reais?"
   },
   {
@@ -72,7 +73,7 @@ const SHORTCUT_ACTIONS = [
   {
     id: "bitcoin",
     icon: "₿",
-    label: "Bitcoin Hoje",
+    label: "Bitcoin hoje",
     prompt: "Qual é a cotação atual do Bitcoin em reais e em dólares?"
   }
 ];
@@ -164,6 +165,11 @@ function saveLocalSettings(settings) {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
 }
 
+function isLocalHost() {
+  return typeof window !== "undefined" &&
+    ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+}
+
 function formatText(text) {
   return String(text || "").trim();
 }
@@ -185,6 +191,13 @@ function getInitials(name) {
     .toUpperCase();
 }
 
+function getFirstName(name) {
+  return String(name || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)[0] || "Pedro";
+}
+
 function makeTitle(text) {
   const clean = String(text || "").replace(/\s+/g, " ").trim();
   const normalized = clean
@@ -199,7 +212,13 @@ function makeTitle(text) {
     { terms: ["alugar", "aluguel", "locacao"], title: "Aluguel de imóvel" },
     { terms: ["reserva", "emergencia"], title: "Reserva de emergência" },
     { terms: ["divida", "dividas", "vermelho"], title: "Organização de dívidas" },
-    { terms: ["investir", "investimento", "acoes", "fii", "renda fixa"], title: "Plano de investimentos" }
+    { terms: ["investir", "investimento", "acoes", "fii", "renda fixa"], title: "Plano de investimentos" },
+    { terms: ["dolar", "cotacao do dolar", "cambio"], title: "Dólar hoje" },
+    { terms: ["bitcoin", "btc"], title: "Bitcoin hoje" },
+    { terms: ["selic"], title: "Taxa Selic" },
+    { terms: ["salario minimo"], title: "Salário mínimo" },
+    { terms: ["tabela do ir", "irpf", "imposto de renda"], title: "Tabela do IR" },
+    { terms: ["fgts"], title: "FGTS" }
   ];
 
   const matched = titleRules.find((rule) =>
@@ -209,6 +228,66 @@ function makeTitle(text) {
   if (matched) return matched.title;
   if (!clean) return "Nova conversa";
   return clean.length > 44 ? `${clean.slice(0, 44)}...` : clean;
+}
+
+function getConversationTimestamp(conversation) {
+  const value = conversation?.updatedAt || conversation?.updated_at || conversation?.createdAt || conversation?.created_at;
+  const time = new Date(value || Date.now()).getTime();
+  return Number.isFinite(time) ? time : Date.now();
+}
+
+function getStartOfDay(time = Date.now()) {
+  const date = new Date(time);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+function getConversationGroupLabel(conversation, now = Date.now()) {
+  const diffDays = Math.floor((getStartOfDay(now) - getStartOfDay(getConversationTimestamp(conversation))) / 86400000);
+
+  if (diffDays <= 0) return "Hoje";
+  if (diffDays === 1) return "Ontem";
+  if (diffDays <= 7) return "Últimos 7 dias";
+  return "Antigas";
+}
+
+function getConversationDisplayTitle(conversation) {
+  const source = conversation?.title || conversation?.messages?.find((message) => message.role === "user")?.text || "";
+  const title = makeTitle(source);
+  return title.length > 34 ? `${title.slice(0, 31)}...` : title;
+}
+
+function groupConversationsByDate(conversations, now = Date.now()) {
+  const order = ["Hoje", "Ontem", "Últimos 7 dias", "Antigas"];
+  const groups = new Map(order.map((label) => [label, []]));
+
+  [...(conversations || [])]
+    .sort((a, b) => getConversationTimestamp(b) - getConversationTimestamp(a))
+    .forEach((conversation) => {
+      groups.get(getConversationGroupLabel(conversation, now)).push(conversation);
+    });
+
+  return order
+    .map((label) => ({ label, conversations: groups.get(label) }))
+    .filter((group) => group.conversations.length > 0);
+}
+
+function dedupeSources(sources) {
+  const seen = new Set();
+
+  return (Array.isArray(sources) ? sources : [])
+    .filter((source) => source?.url)
+    .map((source) => ({
+      ...source,
+      url: safeExternalHref(source.url)
+    }))
+    .filter((source) => {
+      if (!source.url) return false;
+      const key = source.url.replace(/#.*$/, "").replace(/\/$/, "");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 function escapeHtml(text) {
@@ -310,6 +389,15 @@ function prepareMarkdownForRender(text) {
     .replace(/^\s*(?:here(?:'|’)s|here is)\s+(?:my\s+)?(?:reasoning|analysis|thought process)[\s:.-]*$/gim, "")
     .replace(/^\s*(?:internal\s+)?(?:reasoning|analysis|thinking)[\s:.-]*$/gim, "")
     .replace(/^\s*(?:let(?:'|’)s|i(?:'|’)ll|i will)\s+think(?:\s+step by step)?[\s:.-]*.*$/gim, "")
+    .replace(/^.*\bHTTP\s*\d{3}\b.*$/gim, "")
+    .replace(/^.*\b(?:status\s+code|statusCode)\s*\d{3}\b.*$/gim, "")
+    .replace(/^.*\b(?:stack\s*trace|traceback|exception|typeerror|referenceerror|syntaxerror|timeouterror|aborterror|failed\s+to\s+fetch|request\s+failed)\b.*$/gim, "")
+    .replace(/^\s*at\s+[\w.<anonymous>/$-]+(?:\s|\().*$/gim, "")
+    .replace(/^.*\b(?:internetSearch|server\.js|groq\.js|playwright|chromium|browser|page\.goto|fetchSource)\b.*$/gim, "")
+    .replace(/^.*\b(?:falhas?\s+de\s+navegador|erro(?:s)?\s+de\s+navegador|navegador\s+falhou)\b.*$/gim, "")
+    .replace(/^.*\b(?:erro(?:s)?\s+t[eé]cnico(?:s)?|falha(?:s)?\s+t[eé]cnica(?:s)?|demais\s+fontes\s+retornaram)\b.*$/gim, "")
+    .replace(/^.*\b(?:mensagem|instru[cç][aã]o|prompt|log)\s+intern[ao]\b.*$/gim, "")
+    .replace(/^.*n[aã]o\s+foi\s+poss[ií]vel\s+responder\s+com\s+seguran[cç]a\s+agora.*$/gim, "")
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
     .replace(/&quot;/gi, "\"")
@@ -369,67 +457,34 @@ function BotMessageContent({ text }) {
 }
 
 function MessageSources({ sources }) {
-  const items = Array.isArray(sources) ? sources.filter((source) => source?.url) : [];
-  const [expanded, setExpanded] = useState(false);
+  const items = dedupeSources(sources);
 
   if (items.length === 0) return null;
 
   return (
     <div className="message-sources">
-      <button
-        type="button"
-        className="message-sources-toggle"
-        onClick={() => setExpanded((current) => !current)}
-        aria-expanded={expanded}
-      >
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M12 3v18" />
-          <path d="M3 12h18" />
-        </svg>
-        Fontes
-        <span className="message-sources-count">{items.length}</span>
-        <svg
-          viewBox="0 0 24 24"
-          width="14"
-          height="14"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className={`message-sources-chevron${expanded ? " open" : ""}`}
-          aria-hidden="true"
-        >
-          <path d="m6 9 6 6 6-6" />
-        </svg>
-      </button>
-
-      <div className={`message-sources-list${expanded ? " expanded" : ""}`}>
+      <p className="message-sources-title">Fontes</p>
+      <ul className="message-sources-list">
         {items.map((source, index) => {
-          const safeHref = safeExternalHref(source.url);
-          if (!safeHref) return null;
-
+          const safeHref = source.url;
           const domain = source.domain || safeHref.replace(/^https?:\/\//, "").split("/")[0];
           const shortDomain = domain.replace(/^www\./, "");
-          const faviconLabel = shortDomain.slice(0, 2).toUpperCase();
+          const label = source.title || shortDomain;
 
           return (
-            <a
-              key={`${safeHref}-${index}`}
-              href={safeHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="message-source-item"
-            >
-              <span className="message-source-favicon" aria-hidden="true">{faviconLabel}</span>
-              <span className="message-source-info">
-                <span className="message-source-title">{source.title || shortDomain}</span>
-                <span className="message-source-url">{shortDomain}</span>
-              </span>
-            </a>
+            <li key={`${safeHref}-${index}`}>
+              <a
+                href={safeHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="message-source-item"
+              >
+                {label}
+              </a>
+            </li>
           );
         })}
-      </div>
+      </ul>
     </div>
   );
 }
@@ -474,22 +529,37 @@ function MessageBubble({ message, onRetry }) {
   return <article className="message user">{message.text}</article>;
 }
 
-function StartScreen({ onPrompt, onSend }) {
+function QuickActions({ actions, onSend, compact = false, disabled = false }) {
+  return (
+    <div className={compact ? "quick-actions compact" : "quick-actions"} aria-label="Atalhos financeiros">
+      {actions.map((action) => (
+        <button
+          key={action.id}
+          id={compact ? `chat-shortcut-${action.id}` : `shortcut-${action.id}`}
+          type="button"
+          className={compact ? "quick-action-chip compact" : "quick-action-chip"}
+          title={action.prompt}
+          disabled={disabled}
+          onClick={() => {
+            if (!disabled) onSend(action.prompt);
+          }}
+        >
+          <span aria-hidden="true">{action.icon}</span>
+          <span>{action.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function StartScreen({ userName, onPrompt, onSend }) {
   return (
     <section className="start-screen" aria-label="Novo chat">
-      <div className="workspace-shell premium-panel" data-reveal>
-        <div className="workspace-head">
-          <div className="workspace-title">
-            <p>Nova conversa</p>
-            <h2>Escolha um atalho e continue trabalhando.</h2>
-          </div>
-          <div className="workspace-status" aria-hidden="true">
-            <span></span>
-            Online
-          </div>
-        </div>
+      <div className="start-hero" data-reveal>
+        <h2>Olá, {userName} 👋</h2>
+        <p>Como posso ajudar sua vida financeira hoje?</p>
 
-        <div className="summary start-prompts" aria-label="Sugestões de conversa">
+        <div className="start-prompts" aria-label="Sugestões de conversa">
           {QUICK_PROMPTS.map((item) => (
             <button
               key={item.label}
@@ -505,20 +575,65 @@ function StartScreen({ onPrompt, onSend }) {
 
       <div className="start-shortcuts" aria-label="Consultas rápidas" data-reveal>
         <p className="start-shortcuts-label">Consultas rápidas</p>
-        <div className="start-shortcuts-grid">
-          {SHORTCUT_ACTIONS.map((action) => (
-            <button
-              key={action.id}
-              id={`shortcut-${action.id}`}
-              type="button"
-              className="shortcut-card"
-              onClick={() => onSend(action.prompt)}
-            >
-              <span className="shortcut-icon">{action.icon}</span>
-              <span className="shortcut-label">{action.label}</span>
-            </button>
-          ))}
-        </div>
+        <QuickActions actions={SHORTCUT_ACTIONS} onSend={onSend} />
+      </div>
+    </section>
+  );
+}
+
+function ConversationHistory({
+  conversations,
+  currentConversationId,
+  onOpenConversation,
+  onDeleteConversation,
+  emptyText
+}) {
+  const groups = groupConversationsByDate(conversations);
+
+  return (
+    <section className="history-panel" aria-label="Histórico de conversas">
+      <div className="history-head">
+        <span>Conversas</span>
+      </div>
+      <div className="conversation-list" id="conversationList">
+        {groups.length === 0 ? (
+          <p className="conversation-empty">{emptyText}</p>
+        ) : (
+          groups.map((group) => (
+            <div className="conversation-group" key={group.label}>
+              <p className="conversation-group-title">{group.label}</p>
+              {group.conversations.map((conversation) => {
+                const title = getConversationDisplayTitle(conversation);
+
+                return (
+                  <div className="conversation-item" key={conversation.id}>
+                    <button
+                      className={`conversation-open${
+                        conversation.id === currentConversationId ? " active" : ""
+                      }`}
+                      type="button"
+                      data-id={conversation.id}
+                      title={title}
+                      onClick={() => onOpenConversation(conversation.id)}
+                    >
+                      {title}
+                    </button>
+                    <button
+                      className="conversation-delete"
+                      type="button"
+                      data-id={conversation.id}
+                      title="Apagar conversa"
+                      aria-label={`Apagar ${title}`}
+                      onClick={() => onDeleteConversation(conversation.id)}
+                    >
+                      <span></span>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ))
+        )}
       </div>
     </section>
   );
@@ -642,6 +757,8 @@ const TRANSLATIONS = {
 };
 
 export default function App() {
+  const shouldLoadVercelInsights = typeof window !== "undefined" &&
+    !["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
   const [deviceId] = useState(getOrCreateDeviceId);
   const [conversations, setConversations] = useState(loadLocalConversations);
   const [currentConversationId, setCurrentConversationId] = useState("");
@@ -736,7 +853,7 @@ export default function App() {
   const recognitionRef = useRef(null);
 
   useEffect(() => {
-    if ("serviceWorker" in navigator) {
+    if (!isLocalHost() && "serviceWorker" in navigator) {
       navigator.serviceWorker
         .register("/sw.js")
         .then((registration) => {
@@ -1172,11 +1289,16 @@ export default function App() {
   }
 
   async function loadCloudMessages(conversationId) {
-    const response = await fetch(`/api/conversations/${conversationId}/messages`);
-    const data = await response.json();
+    try {
+      const response = await fetch(`/api/conversations/${conversationId}/messages`);
+      const data = await response.json().catch(() => ({}));
 
-    if (!response.ok || !data.configured) return null;
-    return data.messages || [];
+      if (!response.ok || !data.configured) return null;
+      return data.messages || [];
+    } catch (error) {
+      console.error("Falha ao carregar mensagens da conversa:", error);
+      return null;
+    }
   }
 
   async function openConversation(conversationId) {
@@ -1184,19 +1306,21 @@ export default function App() {
     localStorage.setItem(CURRENT_CONVERSATION_KEY, conversationId);
     setStatusText("Carregando...");
 
-    const cloudMessages = await loadCloudMessages(conversationId);
-    if (cloudMessages) {
-      updateConversation(conversationId, () => ({
-        messages: cloudMessages.map((message) => ({
-          id: crypto.randomUUID(),
-          role: message.role,
-          text: message.text
-        }))
-      }));
+    try {
+      const cloudMessages = await loadCloudMessages(conversationId);
+      if (cloudMessages) {
+        updateConversation(conversationId, () => ({
+          messages: cloudMessages.map((message) => ({
+            id: crypto.randomUUID(),
+            role: message.role,
+            text: message.text
+          }))
+        }));
+      }
+    } finally {
+      setStatusText("Online");
+      setIsSidebarOpen(false);
     }
-
-    setStatusText("Online");
-    setIsSidebarOpen(false);
   }
 
   async function loadCloudConversations() {
@@ -1308,6 +1432,7 @@ export default function App() {
 
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
+    let botMsgId = "";
 
     try {
       const response = await fetch("/api/chat/stream", {
@@ -1325,15 +1450,19 @@ export default function App() {
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
+        console.error("Falha ao enviar mensagem:", {
+          status: response.status,
+          error: data?.error
+        });
         removeMessageFromConversation(activeConversationId, typingId);
         appendMessageToConversation(activeConversationId, {
           id: crypto.randomUUID(),
           role: "bot",
-          text: data.error || "Não consegui responder agora.",
+          text: CHAT_FALLBACK_MESSAGE,
           hasError: true,
           retryFor: text
         });
-        showToast(data.error || "Erro ao enviar mensagem", "error");
+        showToast(CHAT_FALLBACK_MESSAGE, "error");
         return;
       }
 
@@ -1344,7 +1473,7 @@ export default function App() {
       let streamText = "";
       let streamSources = [];
       let finalConversationId = activeConversationId;
-      const botMsgId = crypto.randomUUID();
+      botMsgId = crypto.randomUUID();
 
       // Replace typing indicator with streaming message (empty at first)
       removeMessageFromConversation(activeConversationId, typingId);
@@ -1390,7 +1519,8 @@ export default function App() {
             } else if (event.type === "done") {
               finalConversationId = event.conversationId || activeConversationId;
             } else if (event.type === "error") {
-              throw new Error(event.error);
+              console.error("Falha no stream da IA:", event.error);
+              throw new Error("stream-error");
             }
           } catch (parseErr) {
             if (parseErr.name === "AbortError") throw parseErr;
@@ -1424,15 +1554,33 @@ export default function App() {
         removeMessageFromConversation(activeConversationId, typingId);
         showToast("Geração interrompida", "info", 2000);
       } else {
+        console.error("Falha ao receber resposta da IA:", error);
         removeMessageFromConversation(activeConversationId, typingId);
-        appendMessageToConversation(activeConversationId, {
-          id: crypto.randomUUID(),
-          role: "bot",
-          text: "Não consegui conectar ao servidor.",
-          hasError: true,
-          retryFor: text
-        });
-        showToast("Erro de conexão", "error");
+
+        if (botMsgId) {
+          updateConversation(activeConversationId, (conversation) => ({
+            messages: conversation.messages.map((message) =>
+              message.id === botMsgId
+                ? {
+                    ...message,
+                    text: message.text || CHAT_FALLBACK_MESSAGE,
+                    hasError: !message.text,
+                    retryFor: !message.text ? text : undefined
+                  }
+                : message
+            )
+          }));
+        } else {
+          appendMessageToConversation(activeConversationId, {
+            id: crypto.randomUUID(),
+            role: "bot",
+            text: CHAT_FALLBACK_MESSAGE,
+            hasError: true,
+            retryFor: text
+          });
+        }
+
+        showToast(CHAT_FALLBACK_MESSAGE, "error");
       }
     } finally {
       abortControllerRef.current = null;
@@ -1608,12 +1756,6 @@ export default function App() {
   }, [currentUser]);
 
   useEffect(() => {
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => {});
-    }
-  }, []);
-
-  useEffect(() => {
     document.body.classList.remove("theme-light", "theme-dark");
     if (settings.tema === "claro") {
       document.body.classList.add("theme-light");
@@ -1624,7 +1766,8 @@ export default function App() {
 
   useEffect(() => {
     const element = messagesRef.current;
-    if (element) element.scrollTop = element.scrollHeight;
+    if (!element) return;
+    element.scrollTop = messages.length > 0 ? element.scrollHeight : 0;
   }, [messages.length, currentConversationId]);
 
   useEffect(() => {
@@ -1641,8 +1784,12 @@ export default function App() {
 
   return (
     <>
-      <Analytics />
-      <SpeedInsights />
+      {shouldLoadVercelInsights && (
+        <>
+          <Analytics />
+          <SpeedInsights />
+        </>
+      )}
 
       <a href="#main-content" className="skip-link">Pular para o conteúdo principal</a>
 
@@ -1790,41 +1937,13 @@ export default function App() {
             {t("newChat")}
           </button>
 
-          <section className="history-panel" aria-label="Histórico de conversas">
-            <div className="history-head">
-              <span>{t("recent")}</span>
-            </div>
-            <div className="conversation-list" id="conversationList">
-              {conversations.length === 0 ? (
-                <p className="conversation-empty">{t("emptyHistory")}</p>
-              ) : (
-                conversations.map((conversation) => (
-                  <div className="conversation-item" key={conversation.id}>
-                    <button
-                      className={`conversation-open${
-                        conversation.id === currentConversationId ? " active" : ""
-                      }`}
-                      type="button"
-                      data-id={conversation.id}
-                      onClick={() => openConversation(conversation.id)}
-                    >
-                      {conversation.title || t("newChat")}
-                    </button>
-                    <button
-                      className="conversation-delete"
-                      type="button"
-                      data-id={conversation.id}
-                      title="Apagar conversa"
-                      aria-label="Apagar conversa"
-                      onClick={() => deleteConversation(conversation.id)}
-                    >
-                      <span></span>
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
+          <ConversationHistory
+            conversations={conversations}
+            currentConversationId={currentConversationId}
+            onOpenConversation={openConversation}
+            onDeleteConversation={deleteConversation}
+            emptyText={t("emptyHistory")}
+          />
  
           <div className="account-area">
             {accountMenuOpen && (
@@ -1925,6 +2044,7 @@ export default function App() {
           >
             {messages.length === 0 ? (
               <StartScreen
+                userName={getFirstName(displayName)}
                 onPrompt={(prompt) => {
                   setInput(prompt);
                   inputRef.current?.focus();
@@ -1939,23 +2059,13 @@ export default function App() {
           </div>
 
           {messages.length > 0 && (
-            <div className="shortcuts-bar" aria-label="Atalhos financeiros" id="shortcutsBar">
-              {SHORTCUT_ACTIONS.map((action) => (
-                <button
-                  key={action.id}
-                  id={`chat-shortcut-${action.id}`}
-                  type="button"
-                  className="shortcuts-bar-item"
-                  title={action.prompt}
-                  disabled={isSending}
-                  onClick={() => {
-                    if (!isSending) sendMessage(action.prompt);
-                  }}
-                >
-                  <span>{action.icon}</span>
-                  <span>{action.label}</span>
-                </button>
-              ))}
+            <div className="shortcuts-bar" id="shortcutsBar">
+              <QuickActions
+                actions={SHORTCUT_ACTIONS}
+                onSend={sendMessage}
+                compact
+                disabled={isSending}
+              />
             </div>
           )}
 
@@ -2013,6 +2123,7 @@ export default function App() {
               type={isSending ? "button" : "submit"}
               aria-label={isSending ? "Parar geração" : "Enviar mensagem"}
               title={isSending ? "Parar geração" : "Enviar mensagem"}
+              disabled={!isSending && !formatText(input)}
               onPointerDown={() => setSubmitSource("button")}
               onClick={isSending ? (e) => { e.preventDefault(); stopGeneration(); } : undefined}
             >

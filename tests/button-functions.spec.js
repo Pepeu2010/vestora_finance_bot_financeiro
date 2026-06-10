@@ -40,7 +40,7 @@ test.describe("Button Functionality - All Interactive Buttons", () => {
   });
 
   test("quick prompts buttons fill the message input", async ({ page }) => {
-    const quickPromptButton = page.locator('.summary button[data-prompt]').first();
+    const quickPromptButton = page.locator('.start-prompts button[data-prompt]').first();
     await expect(quickPromptButton).toBeVisible();
 
     const messageInput = page.locator("#messageInput");
@@ -55,20 +55,21 @@ test.describe("Button Functionality - All Interactive Buttons", () => {
   });
 
   test("quick prompts buttons show all 6 suggestions", async ({ page }) => {
-    const quickPrompts = page.locator('.summary button[data-prompt]');
+    const quickPrompts = page.locator('.start-prompts button[data-prompt]');
     await expect(quickPrompts).toHaveCount(6);
 
     const expectedLabels = [
-      "Plano financeiro",
-      "Organizar patrimônio",
-      "Financiamento",
+      "Organizar minhas finanças",
       "Investir melhor",
       "Sair das dívidas",
-      "Reserva"
+      "Criar reserva de emergência",
+      "Cotação do dólar",
+      "Bitcoin hoje"
     ];
 
+    const suggestions = page.getByLabel("Sugestões de conversa");
     for (const label of expectedLabels) {
-      await expect(page.getByRole("button", { name: label })).toBeVisible();
+      await expect(suggestions.getByRole("button", { name: label })).toBeVisible();
     }
   });
 
@@ -440,7 +441,7 @@ test.describe("Shortcuts Bar Button Functionality", () => {
     const shortcutsBar = page.locator(".shortcuts-bar");
     await expect(shortcutsBar).toBeVisible();
 
-    const shortcutButtons = page.locator(".shortcuts-bar-item");
+    const shortcutButtons = page.locator(".quick-action-chip.compact");
     await expect(shortcutButtons).toHaveCount(6);
 
     const firstShortcut = shortcutButtons.first();
