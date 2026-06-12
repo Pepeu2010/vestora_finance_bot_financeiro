@@ -6,7 +6,7 @@ test.describe("UI - App React", () => {
     await page.goto("/");
 
     await expect(page).toHaveTitle("Vestora | Inteligência Financeira Pessoal");
-    await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute("content", "#08111f");
+    await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute("content", "#091120");
     await expect(page.locator('meta[name="description"]')).toHaveAttribute(
       "content",
       /educa(ç|c)ão financeira|educacao financeira/i
@@ -42,7 +42,7 @@ test.describe("UI - App React", () => {
 
     await expect(page.locator("aside.sidebar")).toBeVisible();
     await expect(page.locator("section.chat-panel")).toBeVisible();
-    await expect(page.locator(".brand h1").first()).toHaveText("Vestora");
+    await expect(page.locator(".sidebar-brand-lockup .brand-wordmark-text").first()).toHaveText("Vestora");
     await expect(page.locator("#statusText")).toHaveText("Online");
     await expect(page.locator(".live-pill")).toContainText("IA ativa");
   });
@@ -51,19 +51,20 @@ test.describe("UI - App React", () => {
     await page.goto("/");
 
     const labels = [
-      "Plano financeiro",
-      "Organizar patrimônio",
-      "Financiamento",
+      "Organizar minhas finanças",
       "Investir melhor",
       "Sair das dívidas",
-      "Reserva"
+      "Criar reserva de emergência",
+      "Cotação do dólar",
+      "Bitcoin hoje"
     ];
 
+    const suggestions = page.getByLabel("Sugestões de conversa");
     for (const label of labels) {
-      await expect(page.getByRole("button", { name: label })).toBeVisible();
+      await expect(suggestions.getByRole("button", { name: label })).toBeVisible();
     }
 
-    await expect(page.locator(".summary button[data-prompt]")).toHaveCount(6);
+    await expect(page.locator(".start-prompts button[data-prompt]")).toHaveCount(6);
   });
 
   test("mantem o formulario do chat acessivel", async ({ page }) => {

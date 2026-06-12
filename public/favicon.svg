@@ -1,18 +1,23 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
   <defs>
-    <linearGradient id="bg" x1="10" x2="54" y1="8" y2="56" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#1d4ed8"/>
-      <stop offset=".58" stop-color="#3b82f6"/>
-      <stop offset="1" stop-color="#22c55e"/>
+    <linearGradient id="favBlue" x1="14" x2="35" y1="13" y2="41" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2AA8FF"/>
+      <stop offset=".58" stop-color="#1672FF"/>
+      <stop offset="1" stop-color="#0D56FF"/>
     </linearGradient>
-    <linearGradient id="glow" x1="18" x2="46" y1="18" y2="46" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#f8fbff"/>
-      <stop offset="1" stop-color="#bfdbfe"/>
+    <linearGradient id="favGreen" x1="31" x2="50" y1="12" y2="37" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6CFB7E"/>
+      <stop offset=".58" stop-color="#25DD6B"/>
+      <stop offset="1" stop-color="#12C460"/>
     </linearGradient>
   </defs>
-  <rect width="64" height="64" rx="18" fill="#07101d"/>
-  <rect x="8" y="8" width="48" height="48" rx="16" fill="url(#bg)"/>
-  <rect x="13" y="13" width="38" height="38" rx="13" fill="#091322" opacity=".92"/>
-  <path d="M20 22h7l5 14 4-9h7l-9 18h-5z" fill="url(#glow)"/>
-  <path d="M22 42c4-1 8-4 12-10 2 3 5 5 9 6" fill="none" stroke="#22c55e" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"/>
+
+  <rect width="64" height="64" rx="18" fill="#04070D"/>
+  <rect x="8" y="8" width="48" height="48" rx="16" fill="#091120"/>
+  <rect x="8.5" y="8.5" width="47" height="47" rx="15.5" stroke="#1D70FF" stroke-opacity=".26"/>
+
+  <path d="M12 14h8c2 0 4 1 5 3l12 16c1 2 3 3 5 3h4l-7 7c-2 2-5 2-7 0L12 14Z" fill="url(#favBlue)"/>
+  <path d="M35 33c3 0 6-1 8-4l8-8-2-2 7-2-2 7-2-2-9 9c-4 4-8 6-13 6h-3l8-4Z" fill="url(#favGreen)"/>
+  <path d="M38 32h5v8c-2 1-4 0-5-1v-7Z" fill="url(#favGreen)" opacity=".92"/>
+  <path d="M45 27h5v11c-1 1-3 3-5 4V27Z" fill="url(#favGreen)"/>
 </svg>

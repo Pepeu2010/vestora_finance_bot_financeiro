@@ -40,7 +40,7 @@ test.describe("Button Functionality - All Interactive Buttons", () => {
   });
 
   test("quick prompts buttons fill the message input", async ({ page }) => {
-    const quickPromptButton = page.locator('.summary button[data-prompt]').first();
+    const quickPromptButton = page.locator('.start-prompts button[data-prompt]').first();
     await expect(quickPromptButton).toBeVisible();
 
     const messageInput = page.locator("#messageInput");
@@ -55,20 +55,21 @@ test.describe("Button Functionality - All Interactive Buttons", () => {
   });
 
   test("quick prompts buttons show all 6 suggestions", async ({ page }) => {
-    const quickPrompts = page.locator('.summary button[data-prompt]');
+    const quickPrompts = page.locator('.start-prompts button[data-prompt]');
     await expect(quickPrompts).toHaveCount(6);
 
     const expectedLabels = [
-      "Plano financeiro",
-      "Organizar patrimônio",
-      "Financiamento",
+      "Organizar minhas finanças",
       "Investir melhor",
       "Sair das dívidas",
-      "Reserva"
+      "Criar reserva de emergência",
+      "Cotação do dólar",
+      "Bitcoin hoje"
     ];
 
+    const suggestions = page.getByLabel("Sugestões de conversa");
     for (const label of expectedLabels) {
-      await expect(page.getByRole("button", { name: label })).toBeVisible();
+      await expect(suggestions.getByRole("button", { name: label })).toBeVisible();
     }
   });
 
@@ -168,17 +169,59 @@ test.describe("Button Functionality - All Interactive Buttons", () => {
     await expect(page.locator(".message.user")).toBeVisible();
   });
 
-test("mic button has correct accessibility attributes", async ({ page }) => {
-    const micButton = page.locator("#micButton");
-    await expect(micButton).toBeVisible();
-    await expect(micButton).toBeEnabled();
-    await expect(micButton).toHaveAttribute("aria-label", /Entrada por voz/);
-    await expect(micButton).toHaveAttribute("title", "Falar para o bot");
+  test("attach button has correct accessibility attributes", async ({ page }) => {
+    const attachButton = page.locator("#fileUploadButton");
+    const fileInput = page.locator("#fileUploadInput");
+
+    await expect(attachButton).toBeVisible();
+    await expect(attachButton).toBeEnabled();
+    await expect(attachButton).toHaveAttribute("aria-label", /Anexar arquivos/);
+    await expect(attachButton).toHaveAttribute("title", "Anexar arquivos");
+    await expect(fileInput).toHaveAttribute("multiple", "");
+    await expect(fileInput).toHaveAttribute("accept", /pdf/);
   });
 
-  test("mic button is present in the composer form", async ({ page }) => {
-    const micButton = page.locator("#micButton");
-    await expect(micButton).toBeVisible();
+  test("selected files appear in preview list and can be removed", async ({ page }) => {
+    const fileInput = page.locator("#fileUploadInput");
+
+    await fileInput.setInputFiles([
+      {
+        name: "extrato_nubank.pdf",
+        mimeType: "application/pdf",
+        buffer: Buffer.from("fake-pdf")
+      },
+      {
+        name: "gastos_maio.xlsx",
+        mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        buffer: Buffer.from("fake-xlsx")
+      }
+    ]);
+
+    const previewList = page.locator(".file-preview-list");
+    await expect(previewList).toBeVisible();
+    await expect(previewList).toContainText("extrato_nubank.pdf");
+    await expect(previewList).toContainText("gastos_maio.xlsx");
+
+    const firstRemoveButton = previewList.locator(".file-preview-remove").first();
+    await firstRemoveButton.click();
+
+    await expect(previewList).not.toContainText("extrato_nubank.pdf");
+    await expect(previewList).toContainText("gastos_maio.xlsx");
+  });
+
+  test("send button becomes enabled when only attachments are present", async ({ page }) => {
+    const sendButton = page.locator("#sendButton");
+    const fileInput = page.locator("#fileUploadInput");
+
+    await expect(sendButton).toBeDisabled();
+
+    await fileInput.setInputFiles({
+      name: "carteira.png",
+      mimeType: "image/png",
+      buffer: Buffer.from("fake-image")
+    });
+
+    await expect(sendButton).toBeEnabled();
   });
 
   test("enter key submits message", async ({ page }) => {
@@ -301,29 +344,28 @@ test.describe("Settings Modal Button Functionality", () => {
 
   test("settings tab buttons are present and clickable", async ({ page }) => {
     const settingsNavItems = page.locator(".settings-nav-item");
-    await expect(settingsNavItems).toHaveCount(4);
+    await expect(settingsNavItems).toHaveCount(2);
   });
 
   test("settings toggle switches change values", async ({ page }) => {
-    await page.locator('.settings-nav-item:has-text("Notificações")').click();
+    await page.locator('.settings-nav-item:has-text("Conta")').click();
 
-    const toggle = page.locator('.settings-row:has-text("Alertas de mercado") input[type="checkbox"]');
-    const initialState = await toggle.isChecked();
+    const toggle = page.locator('.settings-row:has-text("Alterar senha") button');
+    await expect(toggle).toBeVisible();
 
-    await page.locator('.settings-row:has-text("Alertas de mercado") .settings-toggle').click();
-
-    await expect(toggle).not.toBeChecked();
+    await toggle.click();
+    await expect(page.locator('input[type="password"]').first()).toBeVisible();
   });
 
   test("settings selects change values", async ({ page }) => {
-    await page.locator('.settings-nav-item:has-text("Personalização")').click();
+    await page.locator('.settings-nav-item:has-text("Geral")').click();
 
-    const select = page.locator('.settings-row:has(strong:has-text("Estilo e tom")) select');
-    await expect(select).toHaveValue("padrao");
+    const select = page.locator(".settings-select").first();
+    await expect(select).toHaveValue("pt-br");
 
-    await select.selectOption("formal");
+    await select.selectOption("en");
 
-    await expect(select).toHaveValue("formal");
+    await expect(select).toHaveValue("en");
   });
 
   test("export data button downloads a file", async ({ page }) => {
@@ -378,7 +420,7 @@ test.describe("Profile Modal Button Functionality", () => {
   });
 
   test("profile save button is clickable and calls handler", async ({ page }) => {
-    await page.route("**/api/profile", (route) =>
+    await page.route("**/api/auth/profile", (route) =>
       route.fulfill({
         contentType: "application/json",
         body: JSON.stringify({ ok: true })
@@ -440,7 +482,7 @@ test.describe("Shortcuts Bar Button Functionality", () => {
     const shortcutsBar = page.locator(".shortcuts-bar");
     await expect(shortcutsBar).toBeVisible();
 
-    const shortcutButtons = page.locator(".shortcuts-bar-item");
+    const shortcutButtons = page.locator(".quick-action-chip.compact");
     await expect(shortcutButtons).toHaveCount(6);
 
     const firstShortcut = shortcutButtons.first();
@@ -585,45 +627,24 @@ test.describe("Notification Toggle Functionality", () => {
 
     await page.locator(".account-button").click();
     await page.getByRole("menuitem").filter({ hasText: /Configurações|Settings/ }).click();
-    await page.locator('.settings-nav-item:has-text("Notificações")').click();
+    await page.locator('.settings-nav-item:has-text("Conta")').click();
   });
 
-  test("market alerts toggle changes state", async ({ page }) => {
-    const alertsRow = page.locator('.settings-row:has-text("Alertas de mercado")');
-    const toggle = alertsRow.locator('input[type="checkbox"]');
-    const initialState = await toggle.isChecked();
+  test("change password button shows password form", async ({ page }) => {
+    const changeRow = page.locator('.settings-row:has-text("Alterar senha")');
+    const button = changeRow.getByRole("button");
 
-    await alertsRow.locator(".settings-toggle").click();
+    await button.click();
 
-    await expect(toggle).not.toBeChecked();
+    await expect(page.locator('input[type="password"]').first()).toBeVisible();
   });
 
-  test("price alerts toggle changes state from unchecked to checked", async ({ page }) => {
-    const alertsRow = page.locator('.settings-row:has-text("Alertas de preços")');
-    const toggle = alertsRow.locator('input[type="checkbox"]');
+  test("view sessions button shows sessions list", async ({ page }) => {
+    const sessionsRow = page.locator('.settings-row:has-text("Sessões ativas")');
+    const button = sessionsRow.getByRole("button");
 
-    await expect(toggle).not.toBeChecked();
-
-    await alertsRow.locator(".settings-toggle").click();
-
-    await expect(toggle).toBeChecked();
+    await button.click();
+    await expect(page.getByText(/Dispositivos conectados|Connected Devices/)).toBeVisible();
   });
 
-  test("financial news toggle changes state", async ({ page }) => {
-    const alertsRow = page.locator('.settings-row:has-text("Notícias financeiras")');
-    const toggle = alertsRow.locator('input[type="checkbox"]');
-
-    await alertsRow.locator(".settings-toggle").click();
-
-    await expect(toggle).not.toBeChecked();
-  });
-
-  test("periodic summary toggle changes state", async ({ page }) => {
-    const alertsRow = page.locator('.settings-row:has-text("Resumo financeiro")');
-    const toggle = alertsRow.locator('input[type="checkbox"]');
-
-    await alertsRow.locator(".settings-toggle").click();
-
-    await expect(toggle).not.toBeChecked();
-  });
 });

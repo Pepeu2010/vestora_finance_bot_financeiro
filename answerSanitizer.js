@@ -71,6 +71,42 @@ function stripContradictoryLeadIn(text) {
   return input;
 }
 
+const FRIENDLY_DATA_FALLBACK = "Não consegui obter dados atualizados neste momento. Tente novamente em alguns minutos.";
+
+function stripTechnicalLeakLines(text) {
+  const technicalPatterns = [
+    /\bHTTP\s*\d{3}\b/i,
+    /\b(?:status\s+code|statusCode)\s*\d{3}\b/i,
+    /\b(?:stack\s*trace|traceback|exception|typeerror|referenceerror|syntaxerror|timeouterror|aborterror|failed\s+to\s+fetch|request\s+failed)\b/i,
+    /^\s*at\s+[\w.<anonymous>/$-]+(?:\s|\()/i,
+    /\b(?:internetSearch|server\.js|groq\.js|playwright|chromium|browser|page\.goto|fetchSource)\b/i,
+    /\b(?:falhas?\s+de\s+navegador|erro(?:s)?\s+de\s+navegador|navegador\s+falhou)\b/i,
+    /\b(?:erro(?:s)?\s+t[eé]cnico(?:s)?|falha(?:s)?\s+t[eé]cnica(?:s)?|demais\s+fontes\s+retornaram)\b/i,
+    /\b(?:mensagem|instru[cç][aã]o|prompt|log)\s+intern[ao]\b/i,
+    /\b(?:provider|source|upstream|endpoint|api)\s+(?:unavailable|failed|error|timeout)\b/i,
+    /n[aã]o\s+foi\s+poss[ií]vel\s+responder\s+com\s+seguran[cç]a\s+agora/i
+  ];
+
+  const lines = String(text || "").split("\n");
+  const cleaned = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      cleaned.push(line);
+      continue;
+    }
+
+    if (technicalPatterns.some((pattern) => pattern.test(trimmed))) {
+      continue;
+    }
+
+    cleaned.push(line);
+  }
+
+  return cleaned.join("\n");
+}
+
 function normalizeAnswerSpacing(text) {
   return String(text || "")
     .replace(/\n{3,}/g, "\n\n")
@@ -79,17 +115,22 @@ function normalizeAnswerSpacing(text) {
 }
 
 function sanitizeModelAnswer(text) {
-  return normalizeAnswerSpacing(
+  const cleaned = normalizeAnswerSpacing(
     stripContradictoryLeadIn(
-      stripInternalEnglishMeta(
-        stripHtmlArtifacts(
-          stripTaggedReasoning(text)
+      stripTechnicalLeakLines(
+        stripInternalEnglishMeta(
+          stripHtmlArtifacts(
+            stripTaggedReasoning(text)
+          )
         )
       )
     )
   );
+
+  return cleaned || FRIENDLY_DATA_FALLBACK;
 }
 
 module.exports = {
+  FRIENDLY_DATA_FALLBACK,
   sanitizeModelAnswer
 };

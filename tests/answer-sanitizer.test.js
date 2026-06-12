@@ -33,3 +33,49 @@ test("remove atributos html vazando como texto cru", () => {
     "Banco Central (https://www.bcb.gov.br)"
   );
 });
+
+test("remove detalhes tecnicos de falhas de fontes", () => {
+  const input = [
+    "As demais fontes retornaram erros técnicos: HTTP 403 em Investing.",
+    "Falhas de navegador: TimeoutError: page.goto failed.",
+    "A Selic meta está em **15% ao ano**."
+  ].join("\n\n");
+
+  const output = sanitizeModelAnswer(input);
+
+  assert.equal(output, "A Selic meta está em **15% ao ano**.");
+  assert.doesNotMatch(output, /HTTP 403/i);
+  assert.doesNotMatch(output, /Falhas de navegador/i);
+  assert.doesNotMatch(output, /erros técnicos/i);
+});
+
+test("remove stack traces e mensagens internas preservando a resposta util", () => {
+  const input = [
+    "Error: Request failed with status code 403",
+    "    at fetchSource (/app/internetSearch.js:123:45)",
+    "Mensagem interna do sistema: provider unavailable",
+    "Não foi possível responder com segurança agora.",
+    "O dólar varia durante o dia; acompanhe a cotação em uma fonte financeira confiável."
+  ].join("\n");
+
+  const output = sanitizeModelAnswer(input);
+
+  assert.equal(
+    output,
+    "O dólar varia durante o dia; acompanhe a cotação em uma fonte financeira confiável."
+  );
+  assert.doesNotMatch(output, /status code|internetSearch|Mensagem interna|segurança/i);
+});
+
+test("usa fallback amigavel quando so restam detalhes tecnicos", () => {
+  const input = [
+    "HTTP 403 Forbidden",
+    "TypeError: Failed to fetch",
+    "Falhas de navegador: browser closed"
+  ].join("\n");
+
+  assert.equal(
+    sanitizeModelAnswer(input),
+    "Não consegui obter dados atualizados neste momento. Tente novamente em alguns minutos."
+  );
+});

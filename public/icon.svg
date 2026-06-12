@@ -1,41 +1,35 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
   <defs>
-    <linearGradient id="shell" x1="72" x2="430" y1="64" y2="442" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#1d4ed8"/>
-      <stop offset=".55" stop-color="#3b82f6"/>
-      <stop offset="1" stop-color="#22c55e"/>
+    <linearGradient id="iconBlue" x1="118" x2="286" y1="112" y2="326" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2AA8FF"/>
+      <stop offset=".58" stop-color="#1672FF"/>
+      <stop offset="1" stop-color="#0D56FF"/>
     </linearGradient>
-    <linearGradient id="inner" x1="118" x2="392" y1="116" y2="392" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#0f1b33"/>
-      <stop offset="1" stop-color="#091322"/>
+    <linearGradient id="iconGreen" x1="246" x2="404" y1="108" y2="302" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6CFB7E"/>
+      <stop offset=".58" stop-color="#25DD6B"/>
+      <stop offset="1" stop-color="#12C460"/>
     </linearGradient>
-    <linearGradient id="wordmark" x1="180" x2="324" y1="176" y2="316" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#f8fbff"/>
-      <stop offset="1" stop-color="#bfdbfe"/>
-    </linearGradient>
-    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="18" result="blur"/>
-      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.23 0 0 0 0 0.51 0 0 0 0 0.96 0 0 0 .38 0"/>
-      <feBlend in="SourceGraphic"/>
-    </filter>
   </defs>
 
-  <rect width="512" height="512" rx="112" fill="#07101d"/>
-  <circle cx="118" cy="116" r="82" fill="#1d4ed8" opacity=".18"/>
-  <circle cx="406" cy="396" r="96" fill="#22c55e" opacity=".14"/>
-  <path d="M70 334c52 30 99 9 149-24 55-35 102-32 150-6 44 23 76 21 123-9v109H70V334Z" fill="#0d1b32" opacity=".96"/>
+  <rect width="512" height="512" rx="124" fill="#04070D"/>
+  <circle cx="118" cy="106" r="78" fill="#137DFF" opacity=".18"/>
+  <circle cx="392" cy="408" r="104" fill="#3BE772" opacity=".16"/>
 
-  <g filter="url(#softGlow)">
-    <rect x="104" y="92" width="304" height="304" rx="88" fill="url(#shell)"/>
-    <rect x="126" y="114" width="260" height="260" rx="72" fill="url(#inner)"/>
-  </g>
+  <rect x="92" y="92" width="328" height="328" rx="104" fill="#091120" opacity=".96"/>
+  <rect x="92.5" y="92.5" width="327" height="327" rx="103.5" stroke="url(#iconBlue)" stroke-opacity=".24"/>
 
-  <g fill="none" stroke-linecap="round" stroke-width="14">
-    <path d="M146 174h-30M146 256h-42M146 338h-30M366 174h30M366 256h42M366 338h30" stroke="#60a5fa" opacity=".75"/>
-    <path d="M174 144V116M256 136V104M338 144V116M174 396v28M256 408v32M338 396v28" stroke="#22c55e" opacity=".65"/>
-  </g>
+  <path
+    d="M126 136h56c15 0 29 7 39 19l79 105c9 11 22 18 36 18h27l-38 36c-15 14-38 12-51-4L126 136Z"
+    fill="url(#iconBlue)"
+  />
 
-  <path d="M174 176h48l38 112 30-68h48l-70 120h-38z" fill="url(#wordmark)"/>
-  <path d="M176 332c36-5 69-28 96-78 18 27 44 45 78 53" fill="none" stroke="#22c55e" stroke-linecap="round" stroke-linejoin="round" stroke-width="18"/>
-  <circle cx="334" cy="303" r="10" fill="#22c55e"/>
+  <path
+    d="M280 255c17 0 32-7 46-22l56-56-11-11 46-12-12 46-11-11-60 60c-20 21-42 31-68 31h-17l39-25Z"
+    fill="url(#iconGreen)"
+  />
+
+  <path d="M303 248h28v66c-10 3-20 1-28-6v-60Z" fill="url(#iconGreen)" opacity=".92"/>
+  <path d="M340 213h29v82c-8 11-18 20-29 28v-110Z" fill="url(#iconGreen)" opacity=".95"/>
+  <path d="M379 176h27v90c-6 12-15 24-27 36V176Z" fill="url(#iconGreen)"/>
 </svg>

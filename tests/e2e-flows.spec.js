@@ -179,7 +179,7 @@ test.describe("E2E - Complete User Flows", () => {
 
     await page.goto("/");
 
-    const quickPrompt = page.locator('.summary button[data-prompt]').first();
+    const quickPrompt = page.locator('.start-prompts button[data-prompt]').first();
     await quickPrompt.click();
 
     const inputValue = await page.locator("#messageInput").inputValue();
@@ -211,16 +211,18 @@ test.describe("E2E - Complete User Flows", () => {
     await page.goto("/");
 
     const quickPrompts = [
-      "Plano financeiro",
-      "Organizar patrimônio",
-      "Financiamento",
+      "Organizar minhas finanças",
       "Investir melhor",
       "Sair das dívidas",
-      "Reserva"
+      "Criar reserva de emergência",
+      "Cotação do dólar",
+      "Bitcoin hoje"
     ];
 
+    const suggestions = page.getByLabel("Sugestões de conversa");
+
     for (const label of quickPrompts) {
-      const button = page.getByRole("button", { name: label });
+      const button = suggestions.getByRole("button", { name: label });
       await expect(button).toBeVisible();
       await button.click();
       const inputValue = await page.locator("#messageInput").inputValue();
@@ -467,8 +469,10 @@ test.describe("Empty States", () => {
     await page.goto("/");
 
     await expect(page.locator(".start-screen")).toBeVisible();
+    await expect(page.locator(".start-screen")).toContainText("Olá, Start");
+    await expect(page.locator(".start-screen")).toContainText("Como posso ajudar sua vida financeira hoje?");
     await expect(page.locator(".start-prompts")).toBeVisible();
-    await expect(page.locator(".summary")).toBeVisible();
+    await expect(page.getByLabel("Atalhos financeiros").first()).toBeVisible();
   });
 
   test("hides shortcuts bar when there are no messages", async ({ page }) => {
@@ -534,7 +538,7 @@ test.describe("Mobile Specific", () => {
       await shortcutsBar.evaluate(el => el.scrollLeft = el.scrollWidth);
     }
 
-    await expect(page.locator(".shortcuts-bar-item").first()).toBeVisible();
+    await expect(page.locator(".quick-action-chip.compact").first()).toBeVisible();
   });
 
   test("mobile menu button opens sidebar", async ({ page }) => {
@@ -584,7 +588,7 @@ test.describe("Profile Modal", () => {
         body: JSON.stringify({ configured: false, conversations: [] })
       })
     );
-    await page.route("**/api/profile", (route) =>
+    await page.route("**/api/auth/profile", (route) =>
       route.fulfill({
         contentType: "application/json",
         body: JSON.stringify({ ok: true })
