@@ -3,6 +3,16 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/react";
+import {
+  ACCEPTED_EXTENSIONS,
+  ACCEPTED_FILE_TYPES,
+  MAX_ATTACHMENT_SIZE_BYTES,
+  MAX_ATTACHMENTS,
+  DragDropZone,
+  FilePreviewList,
+  FileUploadButton,
+  buildAttachmentDescriptor
+} from "./components/file-attachments";
 
 const DEVICE_KEY = "vestora-device-id";
 const CONVERSATIONS_KEY = "vestora-conversations";
@@ -10,6 +20,8 @@ const CURRENT_CONVERSATION_KEY = "vestora-current-conversation";
 const SETTINGS_KEY = "vestora-settings";
 const AUTH_TRANSITION_MS = 420;
 const CHAT_FALLBACK_MESSAGE = "Não consegui obter dados atualizados neste momento. Tente novamente em alguns minutos.";
+const BRAND_ASSET_VERSION = 42;
+const FILE_ATTACHMENTS_INPUT_ID = "fileUploadInput";
 
 const QUICK_PROMPTS = [
   {
@@ -78,6 +90,19 @@ const SHORTCUT_ACTIONS = [
   }
 ];
 
+const AUTH_BENEFITS = [
+  "Investimentos",
+  "Patrimônio",
+  "Planejamento financeiro",
+  "Mercado em tempo real"
+];
+
+const AUTH_TRUST_ITEMS = [
+  { icon: "🔒", text: "Seus dados protegidos" },
+  { icon: "🔐", text: "Autenticação segura" },
+  { icon: "📈", text: "Dados financeiros privados" }
+];
+
 function loadLocalConversations() {
   try {
     return JSON.parse(localStorage.getItem(CONVERSATIONS_KEY) || "[]");
@@ -117,8 +142,6 @@ function loadLocalSettings() {
       referenciarHistorico: true,
       buscaNaWeb: true,
       lousa: true,
-      vozBot: true,
-      vozAvancada: true,
       buscaConector: false,
       alertasMercado: true,
       resumoDiario: true,
@@ -146,8 +169,6 @@ function loadLocalSettings() {
       referenciarHistorico: true,
       buscaNaWeb: true,
       lousa: true,
-      vozBot: true,
-      vozAvancada: true,
       buscaConector: false,
       alertasMercado: true,
       resumoDiario: true,
@@ -175,7 +196,7 @@ function formatText(text) {
 }
 
 function getDisplayName(user) {
-  return user?.name || user?.email?.split("@")[0] || "Usuário";
+  return user?.display_name || user?.name || user?.email?.split("@")[0] || "Usuário";
 }
 
 function getInitials(name) {
@@ -196,6 +217,30 @@ function getFirstName(name) {
     .trim()
     .split(/\s+/)
     .filter(Boolean)[0] || "Pedro";
+}
+
+function normalizeFiles(inputFiles) {
+  return Array.from(inputFiles || []);
+}
+
+function buildAttachmentFallbackText(nextAttachments) {
+  if (!nextAttachments?.length) return "";
+  if (nextAttachments.length === 1) {
+    return `Analise o arquivo anexado ${nextAttachments[0].name}.`;
+  }
+  return `Analise os ${nextAttachments.length} arquivos anexados: ${nextAttachments.map((item) => item.name).join(", ")}.`;
+}
+
+function serializeAttachmentsForApi(nextAttachments) {
+  return nextAttachments.map((attachment) => ({
+    id: attachment.id,
+    name: attachment.name,
+    size: attachment.size,
+    type: attachment.type,
+    extension: attachment.extension,
+    category: attachment.category,
+    status: attachment.status
+  }));
 }
 
 function makeTitle(text) {
@@ -526,7 +571,12 @@ function MessageBubble({ message, onRetry }) {
     );
   }
 
-  return <article className="message user">{message.text}</article>;
+  return (
+    <article className="message user">
+      {message.text ? <p>{message.text}</p> : null}
+      {message.attachments?.length ? <FilePreviewList attachments={message.attachments} compact /> : null}
+    </article>
+  );
 }
 
 function QuickActions({ actions, onSend, compact = false, disabled = false }) {
@@ -552,10 +602,72 @@ function QuickActions({ actions, onSend, compact = false, disabled = false }) {
   );
 }
 
+function BrandLockup({
+  className = "",
+  variant = "full",
+  subtitle = "Inteligência financeira pessoal",
+  subtitleAccent = "pessoal"
+}) {
+  const isCompact = variant === "compact";
+  const subtitleParts = String(subtitle).split(subtitleAccent);
+
+  return (
+    <div className={`brand-lockup ${isCompact ? "compact" : "full"} ${className}`.trim()}>
+      <div className={`brand-mark-shell ${isCompact ? "compact" : "full"}`} aria-hidden="true">
+        <img src={`/brand-mark.svg?v=${BRAND_ASSET_VERSION}`} alt="" />
+      </div>
+      <div className="brand-copy">
+        <strong className="brand-wordmark-text">Vestora</strong>
+        {!isCompact && (
+          <span className="brand-tagline">
+            {subtitleParts[0]}
+            <em>{subtitleAccent}</em>
+            {subtitleParts[1] || ""}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AuthField({ id, name, type, placeholder, autoComplete, value, onChange, required, minLength, icon, inputMode }) {
+  return (
+    <label className="auth-field" htmlFor={id}>
+      <span className="auth-field-icon" aria-hidden="true">{icon}</span>
+      <input
+        id={id}
+        name={name}
+        type={type}
+        placeholder={placeholder}
+        autoComplete={autoComplete}
+        required={required}
+        minLength={minLength}
+        inputMode={inputMode}
+        value={value}
+        onChange={onChange}
+      />
+    </label>
+  );
+}
+
+function AuthTrustBar() {
+  return (
+    <div className="auth-trust-bar" aria-label="Sinais de confiança">
+      {AUTH_TRUST_ITEMS.map((item) => (
+        <div className="auth-trust-item" key={item.text}>
+          <span aria-hidden="true">{item.icon}</span>
+          <small>{item.text}</small>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function StartScreen({ userName, onPrompt, onSend }) {
   return (
     <section className="start-screen" aria-label="Novo chat">
       <div className="start-hero" data-reveal>
+        <BrandLockup className="start-brand-lockup" />
         <h2>Olá, {userName} 👋</h2>
         <p>Como posso ajudar sua vida financeira hoje?</p>
 
@@ -651,7 +763,7 @@ const TRANSLATIONS = {
     online: "Online",
     offline: "Offline",
     typing: "Digitando...",
-    composerPlaceholder: "Converse com a Vestora",
+    composerPlaceholder: "Digite sua pergunta financeira...",
     activeIa: "IA ativa",
     waitAnswer: "Aguardando resposta",
     sendMessage: "Enviar mensagem",
@@ -689,7 +801,7 @@ const TRANSLATIONS = {
     online: "Online",
     offline: "Offline",
     typing: "Typing...",
-    composerPlaceholder: "Ask Vestora",
+    composerPlaceholder: "Ask about your finances...",
     activeIa: "AI active",
     waitAnswer: "Waiting for answer",
     sendMessage: "Send message",
@@ -727,7 +839,7 @@ const TRANSLATIONS = {
     online: "En línea",
     offline: "Desconectado",
     typing: "Escribiendo...",
-    composerPlaceholder: "Pregunta a Vestora",
+    composerPlaceholder: "Escribe tu pregunta financiera...",
     activeIa: "IA activa",
     waitAnswer: "Esperando respuesta",
     sendMessage: "Enviar mensaje",
@@ -775,6 +887,8 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authForm, setAuthForm] = useState({ name: "", email: "", password: "" });
   const [composerBurst, setComposerBurst] = useState("");
+  const [attachments, setAttachments] = useState([]);
+  const [dragActive, setDragActive] = useState(false);
   const [showSplash, setShowSplash] = useState(() => {
     if (typeof navigator === "undefined") return true;
     return !navigator.webdriver;
@@ -783,6 +897,8 @@ export default function App() {
   // Input draft auto-save (debounced)
   const DRAFT_KEY = "vestora-draft";
   const inputTimeoutRef = useRef(null);
+  const attachmentInputRef = useRef(null);
+  const dragDepthRef = useRef(0);
 
   useEffect(() => {
     const savedDraft = localStorage.getItem(DRAFT_KEY);
@@ -820,7 +936,7 @@ export default function App() {
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState("personalizacao");
+  const [settingsTab, setSettingsTab] = useState("geral");
   const [settings, setSettings] = useState(loadLocalSettings);
 
   // Translation helpers
@@ -847,10 +963,6 @@ export default function App() {
   // Toast notification state
   const [toast, setToast] = useState(null);
   const toastTimeoutRef = useRef(null);
-
-  // Voice recognition state
-  const [isListening, setIsListening] = useState(false);
-  const recognitionRef = useRef(null);
 
   useEffect(() => {
     if (!isLocalHost() && "serviceWorker" in navigator) {
@@ -913,82 +1025,6 @@ export default function App() {
     toastTimeoutRef.current = setTimeout(() => {
       setToast(null);
     }, duration);
-  }
-
-  function startListening() {
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      showToast('Voz não suportada neste navegador. Use Chrome ou Edge.', 'error');
-      return;
-    }
-
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognition = new SR();
-
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'pt-BR';
-    recognition.maxAlternatives = 1;
-
-    recognitionRef.current = recognition;
-
-    recognition.onstart = () => {
-      setIsListening(true);
-      setStatusText('Ouvindo...');
-    };
-
-    recognition.onresult = (event) => {
-      let finalTranscript = '';
-      let interimTranscript = '';
-
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          finalTranscript += transcript;
-        } else {
-          interimTranscript += transcript;
-        }
-      }
-
-      if (finalTranscript) {
-        setInput((prev) => (prev ? prev + ' ' + finalTranscript : finalTranscript));
-      }
-    };
-
-    recognition.onerror = (event) => {
-      setIsListening(false);
-      setStatusText('Online');
-
-      if (event.error === 'not-allowed') {
-        showToast('Permissão de microfone negada. permita o acesso nas configurações.', 'error');
-      } else if (event.error === 'no-speech') {
-        showToast('Nenhuma fala detectada. Tente novamente.', 'info');
-      } else if (event.error !== 'aborted') {
-        showToast('Erro no reconhecimento de voz.', 'error');
-      }
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-      setStatusText('Online');
-      inputRef.current?.focus();
-    };
-
-    try {
-      recognition.start();
-    } catch {
-      showToast('Erro ao iniciar o microfone.', 'error');
-      setIsListening(false);
-    }
-  }
-
-  function stopListening() {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-      recognitionRef.current = null;
-    }
-    setIsListening(false);
-    setStatusText('Online');
-    inputRef.current?.focus();
   }
 
   // Focus trap for modals
@@ -1114,35 +1150,99 @@ export default function App() {
     }
   }
 
-  function speakText(text) {
-    if (!settings.vozBot) return;
-    if (!window.speechSynthesis) return;
+  function markAttachmentsReady(ids) {
+    setAttachments((previous) => previous.map((item) => (
+      ids.includes(item.id) ? { ...item, status: "ready", error: "" } : item
+    )));
+  }
 
-    window.speechSynthesis.cancel();
+  function removeAttachment(attachmentId) {
+    setAttachments((previous) => previous.filter((item) => item.id !== attachmentId));
+  }
 
-    const cleanText = text
-      .replace(/<[^>]*>/g, "")
-      .replace(/[*#_~`\[\]()|]/g, "")
-      .trim();
+  function validateAndQueueFiles(inputFiles) {
+    const files = normalizeFiles(inputFiles);
+    if (files.length === 0) return;
 
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    const langMap = { "pt-br": "pt-BR", "en": "en-US", "es": "es-ES" };
-    utterance.lang = langMap[settings.idioma] || "pt-BR";
+    setAttachments((previous) => {
+      const next = [...previous];
+      const accepted = [];
+      const seenKeys = new Set(previous.map((item) => `${item.name}-${item.size}-${item.type}`));
 
-    if (settings.vozAvancada) {
-      utterance.rate = 1.05;
-      utterance.pitch = 1.0;
-      const voices = window.speechSynthesis.getVoices();
-      const preferredVoice = voices.find(v => 
-        v.lang.startsWith(utterance.lang.slice(0, 2)) &&
-        (v.name.includes("Google") || v.name.includes("Natural") || v.name.includes("Microsoft"))
-      );
-      if (preferredVoice) utterance.voice = preferredVoice;
-    } else {
-      utterance.rate = 1.0;
+      for (const file of files) {
+        const fingerprint = `${file.name}-${file.size}-${file.type}`;
+        if (seenKeys.has(fingerprint)) {
+          showToast(`O arquivo ${file.name} já está anexado.`, "info", 3200);
+          continue;
+        }
+
+        if (next.length + accepted.length >= MAX_ATTACHMENTS) {
+          showToast(`Você pode anexar até ${MAX_ATTACHMENTS} arquivos por mensagem.`, "error");
+          break;
+        }
+
+        const extension = file.name.split(".").pop()?.toLowerCase() || "";
+        if (!ACCEPTED_EXTENSIONS.includes(extension)) {
+          showToast(`O arquivo ${file.name} não é compatível com a Vestora.`, "error");
+          continue;
+        }
+
+        if (file.size > MAX_ATTACHMENT_SIZE_BYTES) {
+          showToast(`O arquivo ${file.name} excede o limite de 15 MB.`, "error");
+          continue;
+        }
+
+        const descriptor = buildAttachmentDescriptor(file, { status: "uploading" });
+        accepted.push(descriptor);
+        seenKeys.add(fingerprint);
+      }
+
+      if (accepted.length) {
+        const acceptedIds = accepted.map((item) => item.id);
+        window.setTimeout(() => markAttachmentsReady(acceptedIds), 420);
+      }
+
+      return [...next, ...accepted];
+    });
+  }
+
+  function handleAttachmentSelection(event) {
+    validateAndQueueFiles(event.target.files);
+    event.target.value = "";
+  }
+
+  function handleAttachmentPaste(event) {
+    const clipboardFiles = Array.from(event.clipboardData?.files || []);
+    if (!clipboardFiles.length) return;
+    event.preventDefault();
+    validateAndQueueFiles(clipboardFiles);
+  }
+
+  function handleDragEnter(event) {
+    event.preventDefault();
+    dragDepthRef.current += 1;
+    if (!isSending) {
+      setDragActive(true);
     }
+  }
 
-    window.speechSynthesis.speak(utterance);
+  function handleDragOver(event) {
+    event.preventDefault();
+  }
+
+  function handleDragLeave(event) {
+    event.preventDefault();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) {
+      setDragActive(false);
+    }
+  }
+
+  function handleAttachmentDrop(event) {
+    event.preventDefault();
+    dragDepthRef.current = 0;
+    setDragActive(false);
+    validateAndQueueFiles(event.dataTransfer?.files);
   }
 
   const messagesRef = useRef(null);
@@ -1160,6 +1260,8 @@ export default function App() {
   const displayName = getDisplayName(currentUser);
   const userEmail = currentUser?.email || "Conta conectada";
   const userInitials = getInitials(displayName);
+  const accountName = currentUser?.display_name || currentUser?.name || "Não definido";
+  const accountUsername = currentUser?.username || "Não definido";
 
   function persistConversations(nextConversations) {
     setConversations(nextConversations);
@@ -1403,7 +1505,7 @@ export default function App() {
     }
   }
 
-  async function sendMessage(text) {
+  async function sendMessage(text, outgoingAttachments = []) {
     if (sendingLockRef.current) return;
     sendingLockRef.current = true;
     setIsSending(true);
@@ -1418,7 +1520,8 @@ export default function App() {
     appendMessageToConversation(activeConversationId, {
       id: crypto.randomUUID(),
       role: "user",
-      text
+      text,
+      attachments: outgoingAttachments
     });
 
     setStatusText("Pesquisando fontes...");
@@ -1442,6 +1545,7 @@ export default function App() {
           conversationId: activeConversationId,
           sessionId: activeConversationId || deviceId,
           message: text,
+          attachments: serializeAttachmentsForApi(outgoingAttachments),
           settings: settings,
           stream: true
         }),
@@ -1544,7 +1648,6 @@ export default function App() {
             message.id === botMsgId ? { ...message, text: streamText, sources: streamSources } : message
           )
         }));
-        speakText(streamText);
         showToast("Mensagem enviada", "success", 2000);
         await loadCloudConversations();
       }
@@ -1587,6 +1690,7 @@ export default function App() {
       sendingLockRef.current = false;
       setIsSending(false);
       setStatusText(t("online"));
+      setAttachments([]);
       inputRef.current?.focus();
     }
   }
@@ -1597,11 +1701,9 @@ export default function App() {
     if (isSending || sendingLockRef.current) return;
 
     const text = formatText(input);
-    if (!text) return;
-
-    if (window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-    }
+    const readyAttachments = attachments.filter((item) => item.status !== "error");
+    const submissionText = text || buildAttachmentFallbackText(readyAttachments);
+    if (!submissionText) return;
 
     setComposerBurst(submitSource === "button" ? "sending-burst button-submit" : "sending-burst");
     window.setTimeout(() => setComposerBurst(""), 560);
@@ -1609,8 +1711,9 @@ export default function App() {
 
     setInput("");
     localStorage.removeItem(DRAFT_KEY);
+    setAttachments((previous) => previous.map((item) => ({ ...item, status: "sent" })));
 
-    await sendMessage(text);
+    await sendMessage(submissionText, readyAttachments);
   }
 
   async function handleAuthSubmit(event) {
@@ -1675,7 +1778,7 @@ export default function App() {
   function openProfileModal() {
     setAccountMenuOpen(false);
     setProfileForm({
-      name: currentUser?.name || "",
+      name: currentUser?.display_name || currentUser?.name || "",
       username: currentUser?.username || ""
     });
     setProfileError("");
@@ -1684,7 +1787,7 @@ export default function App() {
 
   function openSettings() {
     setAccountMenuOpen(false);
-    setSettingsTab("personalizacao");
+    setSettingsTab("geral");
     setSettingsOpen(true);
   }
 
@@ -1714,7 +1817,7 @@ export default function App() {
         return;
       }
 
-      setCurrentUser(data.user);
+      setCurrentUser((previous) => ({ ...previous, ...data.user }));
       setProfileModalOpen(false);
     } catch {
       setProfileError("Nao consegui conectar ao servidor.");
@@ -1796,10 +1899,7 @@ export default function App() {
       {showSplash && (
         <div className="startup-screen" aria-hidden="true">
           <div className="startup-core">
-            <div className="startup-logo-shell">
-              <img src="/icon.svg?v=41" alt="" />
-            </div>
-            <strong>Vestora</strong>
+            <BrandLockup className="startup-brand-lockup" />
             <span>Financial intelligence, beautifully orchestrated.</span>
             <div className="startup-bar">
               <span></span>
@@ -1844,67 +1944,134 @@ export default function App() {
           className={`auth-screen${authVisible ? " visible" : ""}`}
           aria-label="Login da Vestora"
         >
-          <form className="auth-card" id="authForm" onSubmit={handleAuthSubmit}>
-            <div className="brand auth-brand">
-              <div className="brand-mark" aria-hidden="true">
-                <img src="/icon.svg?v=41" alt="" />
+          <div className="auth-layout">
+            <section className="auth-hero" aria-label="Apresentação da Vestora">
+              <BrandLockup className="auth-hero-brand" />
+              <div className="auth-hero-copy">
+                <h1>Sua inteligência financeira pessoal para decisões mais inteligentes.</h1>
+                <p>
+                  Centralize visão de patrimônio, acompanhe mercado e transforme análise financeira em decisões claras, rápidas e confiáveis.
+                </p>
               </div>
-              <div>
-                <h1>Vestora</h1>
-                <p>Entre para acompanhar decisões, mercado e patrimônio com clareza profissional.</p>
-              </div>
-            </div>
 
-            {isRegisterMode && (
-              <input
-                id="authName"
-                name="name"
-                type="text"
-                placeholder="Nome"
-                autoComplete="name"
-                value={authForm.name}
-                onChange={(event) => setAuthForm({ ...authForm, name: event.target.value })}
-              />
-            )}
-            <input
-              id="authEmail"
-              name="email"
-              type="email"
-              placeholder="Email"
-              autoComplete="email"
-              required
-              value={authForm.email}
-              onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })}
-            />
-            <input
-              id="authPassword"
-              name="password"
-              type="password"
-              placeholder="Senha"
-              autoComplete={isRegisterMode ? "new-password" : "current-password"}
-              required
-              minLength="6"
-              value={authForm.password}
-              onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })}
-            />
-            <p className="auth-error" id="authError" role="alert">
-              {authError}
-            </p>
-            <button id="authSubmit" type="submit" disabled={authLoading}>
-              {isRegisterMode ? "Criar conta" : "Entrar"}
-            </button>
-            <button
-              className="auth-toggle"
-              id="authToggle"
-              type="button"
-              onClick={() => {
-                setIsRegisterMode(!isRegisterMode);
-                setAuthError("");
-              }}
-            >
-              {isRegisterMode ? "Já tenho conta" : "Criar conta"}
-            </button>
-          </form>
+              <div className="auth-benefits" aria-label="Benefícios da plataforma">
+                {AUTH_BENEFITS.map((benefit) => (
+                  <div className="auth-benefit" key={benefit}>
+                    <span className="auth-benefit-check" aria-hidden="true">✓</span>
+                    <strong>{benefit}</strong>
+                  </div>
+                ))}
+              </div>
+
+              <div className="auth-hero-panel" aria-hidden="true">
+                <div className="auth-hero-panel-header">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
+                <div className="auth-hero-panel-body">
+                  <div className="auth-hero-kpi">
+                    <small>Visão consolidada</small>
+                    <strong>Patrimônio, caixa e mercado em uma única conversa</strong>
+                  </div>
+                  <div className="auth-hero-pulse">
+                    <div className="auth-hero-pulse-line pulse-a"></div>
+                    <div className="auth-hero-pulse-line pulse-b"></div>
+                    <div className="auth-hero-pulse-line pulse-c"></div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <form className="auth-card" id="authForm" onSubmit={handleAuthSubmit}>
+              <div className="auth-card-top">
+                <BrandLockup className="auth-brand-lockup" />
+                <div className="auth-card-copy">
+                  <strong>{isRegisterMode ? "Crie sua conta" : "Entrar na Vestora"}</strong>
+                  <p>Continue com uma experiência financeira premium, privada e segura.</p>
+                </div>
+              </div>
+
+              <div className="auth-form-fields">
+                {isRegisterMode && (
+                  <AuthField
+                    id="authName"
+                    name="name"
+                    type="text"
+                    placeholder="Nome"
+                    autoComplete="name"
+                    icon="◎"
+                    value={authForm.name}
+                    onChange={(event) => setAuthForm({ ...authForm, name: event.target.value })}
+                  />
+                )}
+
+                <AuthField
+                  id="authEmail"
+                  name="email"
+                  type="email"
+                  placeholder="Email"
+                  autoComplete="email"
+                  required
+                  inputMode="email"
+                  icon="✉"
+                  value={authForm.email}
+                  onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })}
+                />
+
+                <AuthField
+                  id="authPassword"
+                  name="password"
+                  type="password"
+                  placeholder="Senha"
+                  autoComplete={isRegisterMode ? "new-password" : "current-password"}
+                  required
+                  minLength="6"
+                  icon="•"
+                  value={authForm.password}
+                  onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })}
+                />
+              </div>
+
+              <div className="auth-card-links">
+                <button
+                  className="auth-link auth-forgot"
+                  type="button"
+                  onClick={() => showToast("A recuperação de senha será liberada nesta mesma experiência em breve.", "info")}
+                >
+                  Esqueci minha senha
+                </button>
+                <button
+                  className="auth-link"
+                  id="authToggle"
+                  type="button"
+                  onClick={() => {
+                    setIsRegisterMode(!isRegisterMode);
+                    setAuthError("");
+                  }}
+                >
+                  {isRegisterMode ? "Já tenho conta" : "Criar conta"}
+                </button>
+              </div>
+
+              <p className="auth-error" id="authError" role="alert">
+                {authError}
+              </p>
+
+              <button id="authSubmit" type="submit" disabled={authLoading}>
+                {authLoading ? (
+                  <span className="auth-submit-content">
+                    <span className="auth-spinner" aria-hidden="true"></span>
+                    <span>{isRegisterMode ? "Criando conta..." : "Entrando..."}</span>
+                  </span>
+                ) : (
+                  isRegisterMode ? "Criar conta" : "Entrar"
+                )}
+              </button>
+
+              <AuthTrustBar />
+            </form>
+          </div>
         </section>
       )}
 
@@ -1918,13 +2085,7 @@ export default function App() {
 
         <aside className={`sidebar${isSidebarOpen ? " open" : ""}`} aria-label="Painel da Vestora">
           <div className="brand">
-            <div className="brand-mark" aria-hidden="true">
-              <img src="/icon.svg?v=41" alt="" />
-            </div>
-            <div>
-              <h1>Vestora</h1>
-              <p>Inteligência financeira pessoal</p>
-            </div>
+            <BrandLockup className="sidebar-brand-lockup" />
           </div>
 
           <button className="new-chat" id="newChatButton" type="button" onClick={handleNewChat}>
@@ -1961,14 +2122,6 @@ export default function App() {
                 <button type="button" role="menuitem" onClick={openProfileModal}>
                   <span aria-hidden="true">◎</span>
                   {t("profile")}
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={openSettings}
-                >
-                  <span aria-hidden="true">✦</span>
-                  {t("personalization")}
                 </button>
                 <button
                   type="button"
@@ -2017,7 +2170,7 @@ export default function App() {
               <span></span>
             </button>
             <div className="chat-title">
-              <strong>Vestora</strong>
+              <BrandLockup className="chat-brand-lockup" variant="compact" />
               <span id="statusText">{statusText}</span>
             </div>
             <div className="chat-actions">
@@ -2069,76 +2222,78 @@ export default function App() {
             </div>
           )}
 
-          <form className={`composer ${composerBurst}`.trim()} id="chatForm" onSubmit={handleSubmit}>
-            <button
-              id="micButton"
-              type="button"
-              className={`mic-button${isListening ? " listening" : ""}`}
-              aria-label={isListening ? "Ouvindo... clique para parar" : "Entrada por voz"}
-              title="Falar para o bot"
-              disabled={isSending}
-              onClick={() => {
-                if (isListening) {
-                  stopListening();
-                  return;
-                }
-                startListening();
-              }}
-            >
-              {isListening ? (
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <rect x="6" y="6" width="12" height="12" rx="2" />
-                </svg>
-              ) : (
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <rect x="9" y="2" width="6" height="11" rx="3" />
-                  <path d="M5 10a7 7 0 0 0 14 0" />
-                  <line x1="12" y1="19" x2="12" y2="22" />
-                  <line x1="9" y1="22" x2="15" y2="22" />
-                </svg>
-              )}
-            </button>
-            <textarea
-              id="messageInput"
-              name="message"
-              rows="1"
-              maxLength="1200"
-              placeholder={t("composerPlaceholder")}
-              autoComplete="off"
-              ref={inputRef}
-              value={input}
-              disabled={isSending}
-              onChange={(event) => setInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  if (isSending || sendingLockRef.current) return;
-                  setSubmitSource("keyboard");
-                  event.currentTarget.form?.requestSubmit();
-                }
-              }}
-            />
-            <button
-              id="sendButton"
-              type={isSending ? "button" : "submit"}
-              aria-label={isSending ? "Parar geração" : "Enviar mensagem"}
-              title={isSending ? "Parar geração" : "Enviar mensagem"}
-              disabled={!isSending && !formatText(input)}
-              onPointerDown={() => setSubmitSource("button")}
-              onClick={isSending ? (e) => { e.preventDefault(); stopGeneration(); } : undefined}
-            >
-              {isSending ? (
-                <svg className="stop-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                  <rect x="8" y="8" width="8" height="8" rx="1.8" />
-                </svg>
-              ) : (
-                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                  <path d="M12 19V5" />
-                  <path d="M5 12l7-7 7 7" />
-                </svg>
-              )}
-            </button>
-          </form>
+          <DragDropZone
+            isActive={dragActive}
+            disabled={isSending}
+            onDrop={handleAttachmentDrop}
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+            onDragOver={handleDragOver}
+            onPaste={handleAttachmentPaste}
+          >
+            {attachments.length > 0 && (
+              <div className="composer-attachments">
+                <FilePreviewList attachments={attachments} onRemove={removeAttachment} disabled={isSending} />
+              </div>
+            )}
+
+            <form className={`composer ${composerBurst}`.trim()} id="chatForm" onSubmit={handleSubmit}>
+              <input
+                id={FILE_ATTACHMENTS_INPUT_ID}
+                ref={attachmentInputRef}
+                type="file"
+                className="file-upload-input"
+                accept={ACCEPTED_FILE_TYPES}
+                multiple
+                onChange={handleAttachmentSelection}
+              />
+              <FileUploadButton
+                inputId={FILE_ATTACHMENTS_INPUT_ID}
+                disabled={isSending}
+                onClick={() => attachmentInputRef.current?.click()}
+              />
+              <textarea
+                id="messageInput"
+                name="message"
+                rows="1"
+                maxLength="1200"
+                placeholder={t("composerPlaceholder")}
+                autoComplete="off"
+                ref={inputRef}
+                value={input}
+                disabled={isSending}
+                onChange={(event) => setInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    if (isSending || sendingLockRef.current) return;
+                    setSubmitSource("keyboard");
+                    event.currentTarget.form?.requestSubmit();
+                  }
+                }}
+              />
+              <button
+                id="sendButton"
+                type={isSending ? "button" : "submit"}
+                aria-label={isSending ? "Parar geração" : "Enviar mensagem"}
+                title={isSending ? "Parar geração" : "Enviar mensagem"}
+                disabled={!isSending && !formatText(input) && attachments.length === 0}
+                onPointerDown={() => setSubmitSource("button")}
+                onClick={isSending ? (e) => { e.preventDefault(); stopGeneration(); } : undefined}
+              >
+                {isSending ? (
+                  <svg className="stop-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <rect x="8" y="8" width="8" height="8" rx="1.8" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M12 19V5" />
+                    <path d="M5 12l7-7 7 7" />
+                  </svg>
+                )}
+              </button>
+            </form>
+          </DragDropZone>
         </section>
 
       </main>
@@ -2168,22 +2323,6 @@ export default function App() {
                 {t("general")}
               </button>
               <button
-                className={`settings-nav-item${settingsTab === "notificacoes" ? " active" : ""}`}
-                type="button"
-                onClick={() => setSettingsTab("notificacoes")}
-              >
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                {t("notifications")}
-              </button>
-              <button
-                className={`settings-nav-item${settingsTab === "personalizacao" ? " active" : ""}`}
-                type="button"
-                onClick={() => setSettingsTab("personalizacao")}
-              >
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-                {t("personalization")}
-              </button>
-              <button
                 className={`settings-nav-item${settingsTab === "conta" ? " active" : ""}`}
                 type="button"
                 onClick={() => setSettingsTab("conta")}
@@ -2194,270 +2333,6 @@ export default function App() {
             </nav>
 
             <div className="settings-content">
-              {settingsTab === "personalizacao" && (
-                <div className="settings-pane">
-                  <h2 className="settings-pane-title">{t("personalization")}</h2>
-
-                  <div className="settings-section">
-                    <div className="settings-row">
-                      <div className="settings-row-text">
-                        <strong>Estilo e tom básicos</strong>
-                        <span>Defina o tom e o estilo que a Vestora usa ao responder.</span>
-                      </div>
-                      <select
-                        className="settings-select"
-                        value={settings.estiloTom}
-                        onChange={(e) => updateSetting("estiloTom", e.target.value)}
-                      >
-                        <option value="padrao">Padrão</option>
-                        <option value="formal">Formal</option>
-                        <option value="informal">Informal</option>
-                        <option value="didatico">Didático</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="settings-section">
-                    <h3 className="settings-section-title">Características</h3>
-                    <p className="settings-section-desc">Escolha personalizações adicionais junto com o estilo e tom básicos.</p>
-
-                    <div className="settings-row">
-                      <span className="settings-row-label">Acolhedor</span>
-                      <select
-                        className="settings-select"
-                        value={settings.acolhedor}
-                        onChange={(e) => updateSetting("acolhedor", e.target.value)}
-                      >
-                        <option value="padrao">Padrão</option>
-                        <option value="sim">Sim</option>
-                        <option value="nao">Não</option>
-                      </select>
-                    </div>
-
-                    <div className="settings-row">
-                      <span className="settings-row-label">Entusiasmado</span>
-                      <select
-                        className="settings-select"
-                        value={settings.entusiasmado}
-                        onChange={(e) => updateSetting("entusiasmado", e.target.value)}
-                      >
-                        <option value="padrao">Padrão</option>
-                        <option value="sim">Sim</option>
-                        <option value="nao">Não</option>
-                      </select>
-                    </div>
-
-                    <div className="settings-row">
-                      <span className="settings-row-label">Listas e cabeçalhos</span>
-                      <select
-                        className="settings-select"
-                        value={settings.listasCabecalhos}
-                        onChange={(e) => updateSetting("listasCabecalhos", e.target.value)}
-                      >
-                        <option value="padrao">Padrão</option>
-                        <option value="sim">Sim</option>
-                        <option value="nao">Não</option>
-                      </select>
-                    </div>
-
-                    <div className="settings-row">
-                      <span className="settings-row-label">Emoji</span>
-                      <select
-                        className="settings-select"
-                        value={settings.emoji}
-                        onChange={(e) => updateSetting("emoji", e.target.value)}
-                      >
-                        <option value="padrao">Padrão</option>
-                        <option value="sim">Sim</option>
-                        <option value="nao">Não</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="settings-section">
-                    <div className="settings-row settings-row-col">
-                      <div className="settings-row-text">
-                        <strong>Respostas rápidas</strong>
-                        <span>Às vezes, a Vestora pode usar conhecimento geral para dar respostas rápidas e detalhadas. Elas não são personalizadas e não usam sua memória.</span>
-                      </div>
-                      <label className="settings-toggle">
-                        <input
-                          type="checkbox"
-                          checked={settings.respostasRapidas}
-                          onChange={(e) => updateSetting("respostasRapidas", e.target.checked)}
-                        />
-                        <span className="settings-toggle-slider"></span>
-                      </label>
-                    </div>
-                  </div>
-
-                  <div className="settings-section">
-                    <h3 className="settings-section-title">Instruções personalizadas</h3>
-                    <textarea
-                      className="settings-textarea"
-                      placeholder="Outras preferências de tom, estilo e comportamento"
-                      value={settings.instrucoesPersonalizadas}
-                      onChange={(e) => updateSetting("instrucoesPersonalizadas", e.target.value)}
-                      rows={3}
-                    />
-                  </div>
-
-                  <div className="settings-section">
-                    <h3 className="settings-section-title">Sobre você</h3>
-
-                    <label className="settings-field">
-                      <span className="settings-field-label">Apelido</span>
-                      <input
-                        type="text"
-                        className="settings-input"
-                        placeholder="Como a Vestora deveria te chamar?"
-                        value={settings.apelido}
-                        onChange={(e) => updateSetting("apelido", e.target.value)}
-                      />
-                    </label>
-
-                    <label className="settings-field">
-                      <span className="settings-field-label">Ocupação</span>
-                      <input
-                        type="text"
-                        className="settings-input"
-                        placeholder="Ex: Representante farmacêutico"
-                        value={settings.ocupacao}
-                        onChange={(e) => updateSetting("ocupacao", e.target.value)}
-                      />
-                    </label>
-
-                    <label className="settings-field">
-                      <span className="settings-field-label">Mais sobre você</span>
-                      <textarea
-                        className="settings-textarea"
-                        placeholder="Interesses, valores ou preferências a serem lembrados"
-                        value={settings.maisSobreVoce}
-                        onChange={(e) => updateSetting("maisSobreVoce", e.target.value)}
-                        rows={2}
-                      />
-                    </label>
-                  </div>
-
-                  <div className="settings-section">
-                    <div className="settings-row settings-row-col">
-                      <div className="settings-row-text">
-                        <strong>Memória</strong>
-                      </div>
-                    </div>
-
-                    <div className="settings-row">
-                      <div className="settings-row-text">
-                        <span>Referenciar memórias salvas</span>
-                        <small>Permitir que a Vestora salve e use memórias ao responder.</small>
-                      </div>
-                      <label className="settings-toggle">
-                        <input
-                          type="checkbox"
-                          checked={settings.referenciarMemorias}
-                          onChange={(e) => updateSetting("referenciarMemorias", e.target.checked)}
-                        />
-                        <span className="settings-toggle-slider"></span>
-                      </label>
-                    </div>
-
-                    <div className="settings-row">
-                      <div className="settings-row-text">
-                        <span>Referenciar histórico de chats</span>
-                        <small>Permitir que a Vestora referencie conversas recentes ao responder.</small>
-                      </div>
-                      <label className="settings-toggle">
-                        <input
-                          type="checkbox"
-                          checked={settings.referenciarHistorico}
-                          onChange={(e) => updateSetting("referenciarHistorico", e.target.checked)}
-                        />
-                        <span className="settings-toggle-slider"></span>
-                      </label>
-                    </div>
-                  </div>
-
-                  <div className="settings-section">
-                    <h3 className="settings-section-title">Avançado</h3>
-
-                    <div className="settings-row">
-                      <div className="settings-row-text">
-                        <span>Busca na web</span>
-                        <small>Deixe a Vestora buscar respostas na Web automaticamente.</small>
-                      </div>
-                      <label className="settings-toggle">
-                        <input
-                          type="checkbox"
-                          checked={settings.buscaNaWeb}
-                          onChange={(e) => updateSetting("buscaNaWeb", e.target.checked)}
-                        />
-                        <span className="settings-toggle-slider"></span>
-                      </label>
-                    </div>
-
-                    <div className="settings-row">
-                      <div className="settings-row-text">
-                        <span>Lousa</span>
-                        <small>Colabore com a Vestora em textos e códigos.</small>
-                      </div>
-                      <label className="settings-toggle">
-                        <input
-                          type="checkbox"
-                          checked={settings.lousa}
-                          onChange={(e) => updateSetting("lousa", e.target.checked)}
-                        />
-                        <span className="settings-toggle-slider"></span>
-                      </label>
-                    </div>
-
-                    <div className="settings-row">
-                      <div className="settings-row-text">
-                        <span>Voz da Vestora</span>
-                        <small>Habilitar a voz da Vestora.</small>
-                      </div>
-                      <label className="settings-toggle">
-                        <input
-                          type="checkbox"
-                          checked={settings.vozBot}
-                          onChange={(e) => updateSetting("vozBot", e.target.checked)}
-                        />
-                        <span className="settings-toggle-slider"></span>
-                      </label>
-                    </div>
-
-                    <div className="settings-row">
-                      <div className="settings-row-text">
-                        <span>Voz avançada</span>
-                        <small>Tenha conversas mais naturais com a Voz.</small>
-                      </div>
-                      <label className="settings-toggle">
-                        <input
-                          type="checkbox"
-                          checked={settings.vozAvancada}
-                          onChange={(e) => updateSetting("vozAvancada", e.target.checked)}
-                        />
-                        <span className="settings-toggle-slider"></span>
-                      </label>
-                    </div>
-
-                    <div className="settings-row">
-                      <div className="settings-row-text">
-                        <span>Busca do conector</span>
-                        <small>Deixe a Vestora buscar respostas nas fontes conectadas automaticamente.</small>
-                      </div>
-                      <label className="settings-toggle">
-                        <input
-                          type="checkbox"
-                          checked={settings.buscaConector}
-                          onChange={(e) => updateSetting("buscaConector", e.target.checked)}
-                        />
-                        <span className="settings-toggle-slider"></span>
-                      </label>
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {settingsTab === "geral" && (
                 <div className="settings-pane">
                   <h2 className="settings-pane-title">{t("general")}</h2>
@@ -2551,121 +2426,6 @@ export default function App() {
                 </div>
               )}
 
-              {settingsTab === "notificacoes" && (
-                <div className="settings-pane">
-                  <h2 className="settings-pane-title">{t("notifications")}</h2>
-                  <p className="settings-empty-text">Configure alertas e resumos para acompanhar suas finanças.</p>
-
-                  <div className="settings-section">
-                    <h3 className="settings-section-title">Alertas</h3>
-                    <p className="settings-section-desc">Receba notificações quando algo importante acontecer no mercado ou nas suas metas.</p>
-
-                    <div className="settings-row">
-                      <div className="settings-row-text">
-                        <strong>Alertas de mercado</strong>
-                        <small>Notificações sobre variações significativas da Selic, IPCA, CDI e indicadores econômicos.</small>
-                      </div>
-                      <label className="settings-toggle">
-                        <input
-                          type="checkbox"
-                          checked={settings.alertasMercado}
-                          onChange={(e) => updateSetting("alertasMercado", e.target.checked)}
-                        />
-                        <span className="settings-toggle-slider"></span>
-                      </label>
-                    </div>
-
-                    <div className="settings-row">
-                      <div className="settings-row-text">
-                        <strong>Alertas de preços</strong>
-                        <small>Avisos quando imóveis ou produtos financeiros atingirem faixas de preço de interesse.</small>
-                      </div>
-                      <label className="settings-toggle">
-                        <input
-                          type="checkbox"
-                          checked={settings.alertasPrecos}
-                          onChange={(e) => updateSetting("alertasPrecos", e.target.checked)}
-                        />
-                        <span className="settings-toggle-slider"></span>
-                      </label>
-                    </div>
-
-                    <div className="settings-row">
-                      <div className="settings-row-text">
-                        <strong>Notícias financeiras</strong>
-                        <small>Resumos de notícias relevantes sobre investimentos, impostos e economia pessoal.</small>
-                      </div>
-                      <label className="settings-toggle">
-                        <input
-                          type="checkbox"
-                          checked={settings.noticiasFinanceiras}
-                          onChange={(e) => updateSetting("noticiasFinanceiras", e.target.checked)}
-                        />
-                        <span className="settings-toggle-slider"></span>
-                      </label>
-                    </div>
-                  </div>
-
-                  <div className="settings-section">
-                    <h3 className="settings-section-title">Resumos</h3>
-                    <p className="settings-section-desc">Receba resumos periódicos do seu progresso financeiro e das suas conversas.</p>
-
-                    <div className="settings-row">
-                      <div className="settings-row-text">
-                        <strong>Resumo financeiro periódico</strong>
-                        <small>Um resumo com indicadores do mercado e dicas personalizadas com base no seu perfil.</small>
-                      </div>
-                      <label className="settings-toggle">
-                        <input
-                          type="checkbox"
-                          checked={settings.resumoDiario}
-                          onChange={(e) => updateSetting("resumoDiario", e.target.checked)}
-                        />
-                        <span className="settings-toggle-slider"></span>
-                      </label>
-                    </div>
-
-                    <div className="settings-row settings-row-col">
-                      <div className="settings-row-text">
-                        <strong>Frequência do resumo</strong>
-                        <small>Com que frequência você deseja receber o resumo financeiro.</small>
-                      </div>
-                      <select
-                        className="settings-select"
-                        value={settings.frequenciaResumo}
-                        onChange={(e) => updateSetting("frequenciaResumo", e.target.value)}
-                      >
-                        <option value="diario">Diário</option>
-                        <option value="semanal">Semanal</option>
-                        <option value="quinzenal">Quinzenal</option>
-                        <option value="mensal">Mensal</option>
-                        <option value="desabilitado">Desabilitado</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="settings-section">
-                    <h3 className="settings-section-title">Metas e Lembretes</h3>
-                    <p className="settings-section-desc">Acompanhe suas metas financeiras com lembretes inteligentes.</p>
-
-                    <div className="settings-row">
-                      <div className="settings-row-text">
-                        <strong>Lembretes de metas</strong>
-                        <small>Receba lembretes sobre suas metas de reserva, investimento ou pagamento de dívidas.</small>
-                      </div>
-                      <label className="settings-toggle">
-                        <input
-                          type="checkbox"
-                          checked={settings.lembretesMetas}
-                          onChange={(e) => updateSetting("lembretesMetas", e.target.checked)}
-                        />
-                        <span className="settings-toggle-slider"></span>
-                      </label>
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {settingsTab === "conta" && (
                 <div className="settings-pane">
                   <h2 className="settings-pane-title">{t("account")}</h2>
@@ -2677,7 +2437,7 @@ export default function App() {
                     <div className="settings-row">
                       <div className="settings-row-text">
                         <strong>Nome</strong>
-                        <small>{currentUser?.name || "Não definido"}</small>
+                        <small>{accountName}</small>
                       </div>
                       <button className="settings-select" style={{ cursor: "pointer" }} onClick={openProfileModal}>Editar</button>
                     </div>
@@ -2692,7 +2452,7 @@ export default function App() {
                     <div className="settings-row">
                       <div className="settings-row-text">
                         <strong>Nome de usuário</strong>
-                        <small>{currentUser?.username || "Não definido"}</small>
+                        <small>{accountUsername}</small>
                       </div>
                       <button className="settings-select" style={{ cursor: "pointer" }} onClick={openProfileModal}>Editar</button>
                     </div>

@@ -588,7 +588,7 @@ test.describe("Profile Modal", () => {
         body: JSON.stringify({ configured: false, conversations: [] })
       })
     );
-    await page.route("**/api/profile", (route) =>
+    await page.route("**/api/auth/profile", (route) =>
       route.fulfill({
         contentType: "application/json",
         body: JSON.stringify({ ok: true })

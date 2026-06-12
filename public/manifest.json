@@ -6,13 +6,13 @@
   "id": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#07101d",
-  "theme_color": "#08111f",
+  "background_color": "#04070d",
+  "theme_color": "#091120",
   "lang": "pt-BR",
   "categories": ["finance", "productivity", "utilities"],
   "icons": [
     {
-      "src": "/icon.svg?v=41",
+      "src": "/icon.svg?v=42",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
@@ -25,7 +25,7 @@
       "short_name": "Novo",
       "description": "Abrir uma nova análise financeira",
       "url": "/?action=new",
-      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+      "icons": [{ "src": "/icon.svg?v=42", "sizes": "any" }]
     }
   ],
   "related_applications": [],

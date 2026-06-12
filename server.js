@@ -210,6 +210,35 @@ function getAuthUser(req) {
   return readSession(req.cookies?.[SESSION_COOKIE_NAME]);
 }
 
+async function getSupabaseProfile(userId) {
+  if (!isSupabaseConfigured || !userId) return null;
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("user_id, email, name, display_name, username, avatar_url, role, created_at, updated_at")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data;
+}
+
+function mergeUserWithProfile(user, profile) {
+  if (!user) return null;
+
+  return {
+    id: user.id,
+    email: profile?.email || user.email,
+    name: profile?.name || user.name || "",
+    display_name: profile?.display_name || profile?.name || user.name || "",
+    username: profile?.username ?? null,
+    avatar_url: profile?.avatar_url || null,
+    role: profile?.role || null,
+    created_at: profile?.created_at || null,
+    updated_at: profile?.updated_at || null
+  };
+}
+
 async function requireAuth(req, res, next) {
   const user = getAuthUser(req);
   if (!user) return res.status(401).json({ error: "Login necessario." });
@@ -221,7 +250,9 @@ async function requireAuth(req, res, next) {
       .eq("id", user.id)
       .maybeSingle();
 
-    if (!data) {
+    const profile = data ? null : await getSupabaseProfile(user.id);
+
+    if (!data && !profile) {
       res.clearCookie(SESSION_COOKIE_NAME);
       return res.status(401).json({ error: "Sessao expirada. Faca login novamente." });
     }
@@ -756,9 +787,22 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-app.get("/api/auth/me", (req, res) => {
+app.get("/api/auth/me", async (req, res) => {
   const user = getAuthUser(req);
-  res.json({ authenticated: Boolean(user), user });
+  if (!user) {
+    return res.json({ authenticated: false, user: null });
+  }
+
+  try {
+    const profile = await getSupabaseProfile(user.id);
+    return res.json({
+      authenticated: true,
+      user: mergeUserWithProfile(user, profile)
+    });
+  } catch (error) {
+    console.error(`[${now()}] Erro ao carregar perfil autenticado:`, error.message);
+    return res.json({ authenticated: true, user: mergeUserWithProfile(user, null) });
+  }
 });
 
 app.post("/api/auth/register", authLimiter, async (req, res) => {
@@ -793,8 +837,11 @@ app.post("/api/auth/register", authLimiter, async (req, res) => {
       throw error;
     }
 
-    setSessionCookie(res, data);
-    res.json({ user: data });
+    const profile = await getSupabaseProfile(data.id).catch(() => null);
+    const user = mergeUserWithProfile(data, profile);
+
+    setSessionCookie(res, user);
+    res.json({ user });
   } catch (error) {
     console.error(`[${now()}] Erro ao cadastrar usuario:`, error.message);
     res.status(500).json({ error: "Nao consegui criar sua conta." });
@@ -827,11 +874,14 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {
       return res.status(401).json({ error: "Email ou senha invalidos." });
     }
 
-    const user = {
+    const baseUser = {
       id: data.id,
       name: data.name,
       email: data.email
     };
+
+    const profile = await getSupabaseProfile(data.id).catch(() => null);
+    const user = mergeUserWithProfile(baseUser, profile);
 
     setSessionCookie(res, user);
     res.json({ user });
@@ -857,7 +907,8 @@ app.patch("/api/auth/profile", requireAuth, async (req, res) => {
   }
 
   const name = String(req.body.name || "").trim().slice(0, 80);
-  const username = String(req.body.username || "").trim().toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, 30);
+  const usernameInput = String(req.body.username || "").trim().toLowerCase();
+  const username = usernameInput.replace(/[^a-z0-9._-]/g, "").slice(0, 30);
 
   if (!name) {
     return res.status(400).json({ error: "Nome nao pode ficar vazio." });
@@ -868,38 +919,41 @@ app.patch("/api/auth/profile", requireAuth, async (req, res) => {
   }
 
   try {
-    const updates = { name };
-
     if (username) {
       const { data: existing } = await supabase
-        .from("app_users")
-        .select("id")
+        .from("profiles")
+        .select("user_id")
         .eq("username", username)
-        .neq("id", req.user.id)
+        .neq("user_id", req.user.id)
         .maybeSingle();
 
       if (existing) {
         return res.status(409).json({ error: "Este nome de usuario ja esta em uso." });
       }
-
-      updates.username = username;
     }
 
     const { data, error } = await supabase
-      .from("app_users")
-      .update(updates)
-      .eq("id", req.user.id)
-      .select("id, name, email, username")
+      .from("profiles")
+      .upsert({
+        user_id: req.user.id,
+        email: req.user.email,
+        name,
+        display_name: name,
+        username: username || null
+      }, {
+        onConflict: "user_id"
+      })
+      .select("user_id, email, name, display_name, username, avatar_url, role, created_at, updated_at")
       .single();
 
-    if (error) throw error;
+    if (error) {
+      if (error.code === "23505" || String(error.message || "").toLowerCase().includes("duplicate")) {
+        return res.status(409).json({ error: "Este nome de usuario ja esta em uso." });
+      }
+      throw error;
+    }
 
-    const updatedUser = {
-      id: data.id,
-      name: data.name,
-      email: data.email,
-      username: data.username || ""
-    };
+    const updatedUser = mergeUserWithProfile(req.user, data);
 
     setSessionCookie(res, updatedUser);
     res.json({ user: updatedUser });
