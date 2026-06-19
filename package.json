@@ -1,0 +1,46 @@
+{
+  "name": "vestora",
+  "version": "1.0.0",
+  "description": "Vestora, plataforma web/PWA de educacao financeira e inteligencia financeira pessoal com Node.js e Groq.",
+  "main": "server.js",
+  "scripts": {
+    "build": "vite build",
+    "vercel-build": "vite build",
+    "prestart": "npm run build",
+    "start": "node server.js",
+    "dev": "npm run build && node server.js",
+    "dev:react": "vite --host 0.0.0.0 --port 3005",
+    "test:web-search": "node --test tests/internet-search.test.js"
+  },
+  "keywords": [
+    "vestora",
+    "fintech",
+    "educacao-financeira",
+    "inteligencia-financeira",
+    "groq",
+    "pwa"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.106.2",
+    "@vercel/analytics": "^2.0.1",
+    "@vercel/speed-insights": "^2.0.0",
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^8.5.2",
+    "helmet": "^8.2.0",
+    "playwright": "^1.60.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@vitejs/plugin-react": "^6.0.2",
+    "vite": "^8.0.14"
+  }
+}

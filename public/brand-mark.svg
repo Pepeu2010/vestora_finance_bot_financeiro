@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 180" fill="none">
+  <defs>
+    <linearGradient id="vestoraBlue" x1="34" x2="138" y1="36" y2="144" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2AA8FF"/>
+      <stop offset=".62" stop-color="#1672FF"/>
+      <stop offset="1" stop-color="#0D56FF"/>
+    </linearGradient>
+    <linearGradient id="vestoraGreen" x1="135" x2="213" y1="40" y2="134" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6CFB7E"/>
+      <stop offset=".58" stop-color="#25DD6B"/>
+      <stop offset="1" stop-color="#12C460"/>
+    </linearGradient>
+  </defs>
+
+  <path
+    d="M34 34h36c10 0 19 5 25 13l53 70c6 8 15 12 25 12h18l-27 25c-10 9-25 8-33-3L34 34Z"
+    fill="url(#vestoraBlue)"
+  />
+
+  <path
+    d="M139 111c10 0 19-4 28-13l39-39-8-8 31-8-8 31-8-8-43 43c-14 14-29 21-47 21h-11l27-19Z"
+    fill="url(#vestoraGreen)"
+  />
+
+  <path d="M157 108h18v30c-7 2-13 1-18-3v-27Z" fill="url(#vestoraGreen)" opacity=".92"/>
+  <path d="M182 84h18v39c-6 6-12 11-18 14V84Z" fill="url(#vestoraGreen)" opacity=".94"/>
+  <path d="M207 60h17v41c-4 6-10 12-17 18V60Z" fill="url(#vestoraGreen)"/>
+</svg>

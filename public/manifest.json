@@ -1,0 +1,33 @@
+{
+  "name": "Vestora",
+  "short_name": "Vestora",
+  "description": "Plataforma de educação financeira e inteligência financeira pessoal com IA para acompanhar mercado, patrimônio e decisões do dia a dia.",
+  "start_url": "/",
+  "id": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#04070d",
+  "theme_color": "#091120",
+  "lang": "pt-BR",
+  "categories": ["finance", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/icon.svg?v=42",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Nova Conversa",
+      "short_name": "Novo",
+      "description": "Abrir uma nova análise financeira",
+      "url": "/?action=new",
+      "icons": [{ "src": "/icon.svg?v=42", "sizes": "any" }]
+    }
+  ],
+  "related_applications": [],
+  "prefer_related_applications": false
+}
