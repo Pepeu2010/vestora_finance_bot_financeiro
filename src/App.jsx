@@ -19,9 +19,10 @@ const CONVERSATIONS_KEY = "vestora-conversations";
 const CURRENT_CONVERSATION_KEY = "vestora-current-conversation";
 const SETTINGS_KEY = "vestora-settings";
 const AUTH_TRANSITION_MS = 420;
-const CHAT_FALLBACK_MESSAGE = "Não consegui obter dados atualizados neste momento. Tente novamente em alguns minutos.";
+const CHAT_FALLBACK_MESSAGE = "Tive um problema ao gerar a resposta agora. Tente novamente em instantes.";
 const BRAND_ASSET_VERSION = 42;
 const FILE_ATTACHMENTS_INPUT_ID = "fileUploadInput";
+const MIN_LOADING_FEEDBACK_MS = 250;
 
 const QUICK_PROMPTS = [
   {
@@ -580,6 +581,15 @@ function MessageBubble({ message, onRetry }) {
 }
 
 function QuickActions({ actions, onSend, compact = false, disabled = false }) {
+  const [pendingActionId, setPendingActionId] = useState("");
+  const actionsDisabled = disabled || Boolean(pendingActionId);
+
+  useEffect(() => {
+    if (!disabled) {
+      setPendingActionId("");
+    }
+  }, [disabled]);
+
   return (
     <div className={compact ? "quick-actions compact" : "quick-actions"} aria-label="Atalhos financeiros">
       {actions.map((action) => (
@@ -589,9 +599,15 @@ function QuickActions({ actions, onSend, compact = false, disabled = false }) {
           type="button"
           className={compact ? "quick-action-chip compact" : "quick-action-chip"}
           title={action.prompt}
-          disabled={disabled}
-          onClick={() => {
-            if (!disabled) onSend(action.prompt);
+          disabled={actionsDisabled}
+          onClick={async () => {
+            if (actionsDisabled) return;
+            setPendingActionId(action.id);
+            try {
+              await Promise.resolve(onSend(action.prompt));
+            } finally {
+              setPendingActionId("");
+            }
           }}
         >
           <span aria-hidden="true">{action.icon}</span>
@@ -776,6 +792,23 @@ const TRANSLATIONS = {
     general: "Geral",
     notifications: "Notificações",
     account: "Conta",
+    notificationsTitle: "Notificacoes",
+    notificationsDescription: "Escolha quais avisos e resumos voce quer receber na sua experiencia.",
+    marketAlerts: "Alertas de mercado",
+    marketAlertsDescription: "Receba avisos sobre movimentos relevantes do mercado financeiro.",
+    dailySummary: "Resumo diario",
+    dailySummaryDescription: "Ative um resumo com destaques financeiros e acompanhamento da sua rotina.",
+    priceAlerts: "Alertas de precos",
+    priceAlertsDescription: "Monitore precos e cotacoes de ativos ou indicadores importantes.",
+    financeNews: "Noticias financeiras",
+    financeNewsDescription: "Exiba noticias e sinais relevantes para acompanhar o cenario economico.",
+    goalsReminders: "Lembretes de metas",
+    goalsRemindersDescription: "Receba lembretes para acompanhar suas metas e compromissos financeiros.",
+    summaryFrequency: "Frequencia",
+    summaryFrequencyDescription: "Defina com que ritmo a Vestora organiza seus resumos.",
+    frequencyDaily: "Diario",
+    frequencyWeekly: "Semanal",
+    frequencyMonthly: "Mensal",
     change: "Alterar",
     view: "Ver",
     currentDevice: "Este dispositivo (Navegador atual)",
@@ -814,6 +847,23 @@ const TRANSLATIONS = {
     general: "General",
     notifications: "Notifications",
     account: "Account",
+    notificationsTitle: "Notifications",
+    notificationsDescription: "Choose which alerts and summaries you want in your experience.",
+    marketAlerts: "Market alerts",
+    marketAlertsDescription: "Get alerts about relevant movements in the financial markets.",
+    dailySummary: "Daily summary",
+    dailySummaryDescription: "Enable a summary with financial highlights and routine follow-up.",
+    priceAlerts: "Price alerts",
+    priceAlertsDescription: "Track prices and quotes for assets or important indicators.",
+    financeNews: "Financial news",
+    financeNewsDescription: "Show relevant news and signals to follow the economic landscape.",
+    goalsReminders: "Goal reminders",
+    goalsRemindersDescription: "Get reminders to track your financial goals and commitments.",
+    summaryFrequency: "Frequency",
+    summaryFrequencyDescription: "Define how often Vestora organizes your summaries.",
+    frequencyDaily: "Daily",
+    frequencyWeekly: "Weekly",
+    frequencyMonthly: "Monthly",
     change: "Change",
     view: "View",
     currentDevice: "This device (Current browser)",
@@ -852,6 +902,23 @@ const TRANSLATIONS = {
     general: "General",
     notifications: "Notificaciones",
     account: "Cuenta",
+    notificationsTitle: "Notificaciones",
+    notificationsDescription: "Elige qu? alertas y res?menes quieres recibir en tu experiencia.",
+    marketAlerts: "Alertas de mercado",
+    marketAlertsDescription: "Recibe alertas sobre movimientos relevantes del mercado financiero.",
+    dailySummary: "Resumen diario",
+    dailySummaryDescription: "Activa un resumen con destaques financieros y seguimiento de tu rutina.",
+    priceAlerts: "Alertas de precios",
+    priceAlertsDescription: "Monitorea precios y cotizaciones de activos o indicadores importantes.",
+    financeNews: "Noticias financieras",
+    financeNewsDescription: "Muestra noticias y se?ales relevantes para seguir el panorama econ?mico.",
+    goalsReminders: "Recordatorios de metas",
+    goalsRemindersDescription: "Recibe recordatorios para seguir tus metas y compromisos financieros.",
+    summaryFrequency: "Frecuencia",
+    summaryFrequencyDescription: "Define con qu? ritmo Vestora organiza tus res?menes.",
+    frequencyDaily: "Diario",
+    frequencyWeekly: "Semanal",
+    frequencyMonthly: "Mensual",
     change: "Cambiar",
     view: "Ver",
     currentDevice: "Este dispositivo (Navegador actual)",
@@ -1721,6 +1788,7 @@ export default function App() {
 
     setAuthError("");
     setAuthLoading(true);
+    const loadingStartedAt = Date.now();
 
     try {
       const response = await fetch(isRegisterMode ? "/api/auth/register" : "/api/auth/login", {
@@ -1746,6 +1814,10 @@ export default function App() {
     } catch {
       setAuthError("Não consegui conectar ao servidor.");
     } finally {
+      const remaining = MIN_LOADING_FEEDBACK_MS - (Date.now() - loadingStartedAt);
+      if (remaining > 0) {
+        await new Promise((resolve) => window.setTimeout(resolve, remaining));
+      }
       setAuthLoading(false);
     }
   }
@@ -2323,6 +2395,14 @@ export default function App() {
                 {t("general")}
               </button>
               <button
+                className={`settings-nav-item${settingsTab === "notificacoes" ? " active" : ""}`}
+                type="button"
+                onClick={() => setSettingsTab("notificacoes")}
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.17V11a6 6 0 1 0-12 0v3.17a2 2 0 0 1-.6 1.42L4 17h5"/><path d="M9 17a3 3 0 0 0 6 0"/></svg>
+                {t("notifications")}
+              </button>
+              <button
                 className={`settings-nav-item${settingsTab === "conta" ? " active" : ""}`}
                 type="button"
                 onClick={() => setSettingsTab("conta")}
@@ -2421,6 +2501,57 @@ export default function App() {
                       <div className="settings-row-text">
                         <small>Desenvolvida para ajudar você a tomar decisões financeiras mais inteligentes sobre patrimônio, investimentos, crédito, dívidas e planejamento.</small>
                       </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+
+              {settingsTab === "notificacoes" && (
+                <div className="settings-pane">
+                  <h2 className="settings-pane-title">{t("notificationsTitle")}</h2>
+
+                  <div className="settings-section">
+                    <h3 className="settings-section-title">{t("notifications")}</h3>
+                    <p className="settings-section-desc">{t("notificationsDescription")}</p>
+
+                    {[
+                      ["alertasMercado", "marketAlerts", "marketAlertsDescription"],
+                      ["resumoDiario", "dailySummary", "dailySummaryDescription"],
+                      ["alertasPrecos", "priceAlerts", "priceAlertsDescription"],
+                      ["noticiasFinanceiras", "financeNews", "financeNewsDescription"],
+                      ["lembretesMetas", "goalsReminders", "goalsRemindersDescription"]
+                    ].map(([key, titleKey, descKey]) => (
+                      <div className="settings-row" key={key}>
+                        <div className="settings-row-text">
+                          <strong>{t(titleKey)}</strong>
+                          <small>{t(descKey)}</small>
+                        </div>
+                        <label className="settings-toggle" aria-label={t(titleKey)}>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(settings[key])}
+                            onChange={(event) => updateSetting(key, event.target.checked)}
+                          />
+                          <span className="settings-toggle-slider" aria-hidden="true"></span>
+                        </label>
+                      </div>
+                    ))}
+
+                    <div className="settings-row">
+                      <div className="settings-row-text">
+                        <strong>{t("summaryFrequency")}</strong>
+                        <small>{t("summaryFrequencyDescription")}</small>
+                      </div>
+                      <select
+                        className="settings-select"
+                        value={settings.frequenciaResumo || "diario"}
+                        onChange={(e) => updateSetting("frequenciaResumo", e.target.value)}
+                      >
+                        <option value="diario">{t("frequencyDaily")}</option>
+                        <option value="semanal">{t("frequencyWeekly")}</option>
+                        <option value="mensal">{t("frequencyMonthly")}</option>
+                      </select>
                     </div>
                   </div>
                 </div>

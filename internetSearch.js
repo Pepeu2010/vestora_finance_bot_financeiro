@@ -1141,7 +1141,7 @@ async function pesquisarInternet(message, options = {}) {
         usedWebSearch: false,
         usedRealtimeData: false,
         results: [],
-        warning: "Falha na pesquisa online no momento.",
+        warning: "Dados em tempo real indisponiveis para esta consulta.",
         errors: [error.message]
       };
     })

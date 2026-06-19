@@ -73,7 +73,7 @@ test.describe("UI - App React", () => {
     const textarea = page.locator("#messageInput");
     await expect(textarea).toBeVisible();
     await expect(textarea).toHaveAttribute("maxlength", "1200");
-    await expect(textarea).toHaveAttribute("placeholder", "Converse com a Vestora");
+    await expect(textarea).toHaveAttribute("placeholder", "Digite sua pergunta financeira...");
     await expect(page.locator("#sendButton")).toHaveAttribute("aria-label", "Enviar mensagem");
     await expect(page.locator("#messages")).toHaveAttribute("aria-live", "polite");
   });
@@ -88,7 +88,7 @@ test.describe("UI - App React", () => {
 
     await expect(page.locator(".mobile-menu-button")).toBeVisible();
     await expect(composer).toBeVisible();
-    await expect(textarea).toHaveAttribute("placeholder", "Converse com a Vestora");
+    await expect(textarea).toHaveAttribute("placeholder", "Digite sua pergunta financeira...");
 
     const composerBox = await composer.boundingBox();
     const textareaBox = await textarea.boundingBox();

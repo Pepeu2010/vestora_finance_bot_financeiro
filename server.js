@@ -1,4 +1,4 @@
-require("dotenv").config();
+﻿require("dotenv").config();
 
 const crypto = require("crypto");
 const express = require("express");
@@ -26,7 +26,9 @@ const MAX_HISTORY_MESSAGES = Number(process.env.MAX_HISTORY_MESSAGES || 8);
 const MAX_MESSAGE_LENGTH = 1200;
 const SESSION_COOKIE_NAME = "vestora_session";
 const SESSION_SECRET = process.env.APP_SESSION_SECRET || "dev-only-change-this-secret";
-const SECURITY_REFUSAL = "Não posso ajudar com arquivos internos, código, chaves, prompts ou configurações do sistema. Posso te ajudar com educação financeira, organização do dinheiro e investimentos.";
+const SECURITY_REFUSAL = "N\u00e3o posso ajudar com arquivos internos, c\u00f3digo, chaves, prompts ou configura\u00e7\u00f5es do sistema. Posso te ajudar com educa\u00e7\u00e3o financeira, organiza\u00e7\u00e3o do dinheiro e investimentos.";
+const OFFICIAL_FACTS_TIMEOUT_MS = Number(process.env.OFFICIAL_FACTS_TIMEOUT_MS || 3500);
+const WEB_SEARCH_TIMEOUT_MS = Number(process.env.WEB_SEARCH_TIMEOUT_MS || 4500);
 
 // Memoria temporaria por sessao do navegador.
 // Sem banco de dados: se o servidor reiniciar, a memoria some.
@@ -121,7 +123,7 @@ app.use((req, res, next) => {
 
 app.use("/api/", apiLimiter);
 const publicPath = path.join(__dirname, "public");
-const distPath = path.join(__dirname, "dist");
+const distPath = path.join(__dirname, process.env.DIST_DIR || "dist");
 
 app.use(express.static(distPath, {
   dotfiles: "ignore",
@@ -139,6 +141,18 @@ app.use(express.static(publicPath, {
 function now() {
   return new Date().toLocaleString("pt-BR");
 }
+function withTimeout(promise, timeoutMs, fallbackValue = null) {
+  let timeoutId;
+  return Promise.race([
+    Promise.resolve(promise)
+      .catch(() => fallbackValue)
+      .finally(() => clearTimeout(timeoutId)),
+    new Promise((resolve) => {
+      timeoutId = setTimeout(() => resolve(fallbackValue), timeoutMs);
+    })
+  ]);
+}
+
 
 function createSessionId() {
   return crypto.randomUUID();
@@ -514,7 +528,7 @@ function tryQuickCalculator(text, session, officialFacts) {
   ) {
     const checked = officialFacts?.verified
       ? "Conferi fontes oficiais antes de responder."
-      : "Não consegui confirmar online agora, então use isto como referência e valide na CAIXA/Ministério das Cidades.";
+      : "Use isto como referencia geral e valide na CAIXA ou no Ministerio das Cidades antes de fechar contrato.";
 
     return `${checked}\n\nSobre o **Minha Casa, Minha Vida**, famílias em área urbana podem entrar no programa com renda bruta familiar mensal de até **R$ 13.000**.\n\nFaixas urbanas atuais: **Faixa 1 até R$ 3.200**, **Faixa 2 de R$ 3.200,01 a R$ 5.000**, **Faixa 3 de R$ 5.000,01 a R$ 9.600** e **Faixa 4 até R$ 13.000**. Para a Faixa 4, o MCMV Classe Média tem regras específicas, como imóvel de até R$ 600 mil.\n\nPróximo passo: confirme sua renda familiar bruta, cidade, valor do imóvel e entrada disponível. Antes de fechar contrato, valide no simulador da CAIXA ou em uma agência, porque taxas, subsídio e aprovação dependem do perfil e da data.`;
   }
@@ -538,6 +552,33 @@ function tryQuickCalculator(text, session, officialFacts) {
 
     lines.push("Esses indicadores mudam. Para aplicar dinheiro hoje, confirme a taxa no banco/corretora e veja liquidez, IR, IOF e risco.");
     return lines.join("\n");
+  }
+
+  if (normalized.includes("selic")) {
+    return [
+      "Resposta baseada em conhecimento geral. Dados em tempo real indisponíveis.",
+      "- **Selic meta:** é a taxa básica de juros definida pelo COPOM, do Banco Central.",
+      "- Ela influencia crédito, financiamento, renda fixa pós-fixada e o custo do dinheiro na economia.",
+      "- Para a taxa vigente nesta data, confirme no Banco Central antes de tomar decisão financeira."
+    ].join("\n");
+  }
+
+  if (normalized.includes("ipca")) {
+    return [
+      "Resposta baseada em conhecimento geral. Dados em tempo real indisponíveis.",
+      "- **IPCA:** é o índice oficial de inflação acompanhado pelo mercado e pelo Banco Central.",
+      "- Ele mede a variação de preços ao consumidor e ajuda a avaliar perda de poder de compra.",
+      "- Para o número mais recente, confirme no IBGE antes de usar o dado em planejamento financeiro."
+    ].join("\n");
+  }
+
+  if (normalized.includes("cdi")) {
+    return [
+      "Resposta baseada em conhecimento geral. Dados em tempo real indisponíveis.",
+      "- **CDI:** é uma referência muito usada em investimentos pós-fixados e costuma acompanhar a Selic de perto.",
+      "- CDBs, contas remuneradas e alguns fundos costumam informar rentabilidade em percentual do CDI.",
+      "- Para o valor atualizado, confirme na fonte do produto ou em provedores financeiros confiáveis."
+    ].join("\n");
   }
 
   if (normalized.includes("salario minimo") && salaryFacts?.facts?.currentValue) {
@@ -1272,14 +1313,22 @@ async function prepareChatRequest(req, res) {
   const shouldAttemptWebSearch = (mustUseWebSearch || freshness.shouldSearch) && userSettings.buscaNaWeb !== false;
   const searchPromises = [];
   searchPromises.push(
-    getOfficialFactsForMessage(userMessage, { online: true }).catch(() => null)
+    withTimeout(
+      getOfficialFactsForMessage(userMessage, { online: true }),
+      OFFICIAL_FACTS_TIMEOUT_MS,
+      null
+    )
   );
   searchPromises.push(
     shouldAttemptWebSearch
-      ? pesquisarInternet(userMessage, {
-          classification: freshness,
-          force: mustUseWebSearch
-        }).catch(() => null)
+      ? withTimeout(
+          pesquisarInternet(userMessage, {
+            classification: freshness,
+            force: mustUseWebSearch
+          }),
+          WEB_SEARCH_TIMEOUT_MS,
+          null
+        )
       : Promise.resolve(null)
   );
 
@@ -1357,7 +1406,7 @@ app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
 });
 
 /**
- * Streaming chat endpoint — returns Server-Sent Events.
+ * Streaming chat endpoint â€” returns Server-Sent Events.
  */
 app.post("/api/chat/stream", requireAuth, chatLimiter, async (req, res) => {
   try {
@@ -1469,3 +1518,4 @@ if (require.main === module) {
 }
 
 module.exports = app;
+

@@ -39,6 +39,35 @@ function trimInternetResults(internetResults) {
   return { ...internetResults, results: trimmed };
 }
 
+function buildInternetContext(internetResults) {
+  if (!internetResults) return null;
+
+  const hasUsableWebResults = Array.isArray(internetResults.results) && internetResults.results.length > 0;
+  if (internetResults.externalSuccess && hasUsableWebResults) {
+    return {
+      checkedAt: internetResults.checkedAt,
+      classification: internetResults.classification,
+      engine: internetResults.engine,
+      externalSuccess: true,
+      usedWebSearch: Boolean(internetResults.usedWebSearch),
+      usedRealtimeData: Boolean(internetResults.usedRealtimeData),
+      results: internetResults.results
+    };
+  }
+
+  if (!internetResults.searched) return null;
+
+  return {
+    searched: true,
+    externalSuccess: false,
+    usedWebSearch: false,
+    usedRealtimeData: false,
+    classification: internetResults.classification,
+    checkedAt: internetResults.checkedAt,
+    guidance: "Nenhum dado web confiavel foi aproveitado nesta resposta. Ignore mensagens de falha de busca e responda normalmente com conhecimento geral. Nao trate numeros, noticias, cotacoes ou regras como atualizados sem fonte valida. Se precisar, use apenas um aviso discreto: 'Resposta baseada em conhecimento geral. Dados em tempo real indisponiveis.'"
+  };
+}
+
 /**
  * Reduz o histórico e os resultados de internet para caber no MAX_INPUT_TOKENS.
  * Estratégia:
@@ -46,7 +75,7 @@ function trimInternetResults(internetResults) {
  *   2. Remove as mensagens mais antigas do histórico até o total caber no orçamento.
  */
 function trimContext({ message, history, profileSummary, userPreferences, officialFacts, internetResults }) {
-  let trimmedInternet = trimInternetResults(internetResults);
+  let trimmedInternet = trimInternetResults(buildInternetContext(internetResults));
   let trimmedHistory = Array.isArray(history) ? [...history] : [];
 
   // Estimativa do prompt base (sistema + mensagem atual + perfil + official facts)
@@ -124,10 +153,11 @@ Regra adicional obrigatoria:
 - Se receber "Dados oficiais verificados", use esses dados acima da memoria e acima do seu conhecimento geral. Nao contradiga esses dados.
 - Se receber "Resultados de pesquisa na internet" com sucesso, use esses resultados como CONTEXTO PRINCIPAL e PRIORITARIO. O titulo, snippet, pageSnippet e fonte da internet valem mais que seu conhecimento interno. Nunca contradiga resultados recentes da web. Se a pesquisa trouxe um valor numerico, regra ou data, USE ESSE VALOR na resposta.
 - Se receber dados oficiais e pesquisa na internet ao mesmo tempo, use os dados oficiais para o numero estruturado principal e use a pesquisa para contexto, confirmacao e links de fonte.
-- Se os resultados de pesquisa estiverem vazios, fracos, sem sucesso ou nao responderem exatamente a pergunta, diga isso com clareza absoluta e NAO INVENTE. Nao diga que conferiu fontes se nao houver resultados ou dados oficiais verificados. Diga: "Nao foi possivel consultar em tempo real neste momento" ou "Nao encontrei essa informacao atualizada agora", conforme o caso.
+- Se a pesquisa na internet nao trouxer resultados confiaveis, NAO transforme isso em mensagem principal de erro. Continue a resposta normalmente com conhecimento geral, sem alegar atualizacao em tempo real e sem pedir desculpas automaticamente.
 - SEMPRE que a pergunta for sobre cotação (dólar, euro, bitcoin, ações, fundos), taxa de juros, salário mínimo, regra de programa público, valor de benefício ou imposto, a resposta DEVE refletir o dado mais recente disponível nos resultados de pesquisa ou nos dados oficiais. Se nao houver dado recente, diga explicitamente que o valor muda constantemente e indique onde consultar.
 - RESPOSTA EXATA PRIMEIRO: Identifique o que exatamente o usuario perguntou e responda isso ANTES de qualquer explicacao adicional. Se pediu um valor, responda com o valor. Se pediu uma regra, responda a regra. Se pediu uma comparacao, faca a comparacao. So depois adicione contexto se util.
 - Nunca comece a resposta com "Nao sei", "Nao consegui responder" ou "Nao foi possivel consultar" se houver informacao util e verificavel nos dados oficiais ou na pesquisa enviados no prompt.
+- Perguntas atemporais ou explicativas, como abrir um mercado, como funciona um supermercado, o que e inflacao, como criar um plano de negocios ou como investir em CDB, devem ser respondidas imediatamente com conhecimento interno; nao dependa de busca web nesses casos.
 - ANTES DE RESPONDER, PENSE: (1) O que o usuario quer saber exatamente? (2) Tenho dados suficientes? (3) Qual a resposta mais direta e precisa? (4) Preciso buscar mais informacao na internet? Depois de pensar, gere a resposta final.
 - Nao mencione ferramentas internas usadas para pesquisar. Se for util, cite apenas o nome da fonte ou site encontrado, como Banco Central, CAIXA, Ministerio das Cidades, B3, Receita Federal, CoinGecko ou AwesomeAPI.
 - So use "Atualizado agora" ou equivalente quando houver consulta externa bem-sucedida ou dado oficial consultado agora.
@@ -152,10 +182,12 @@ Regra adicional obrigatoria:
     });
   }
 
-  if (internetResults) {
+  const internetContext = buildInternetContext(internetResults);
+
+  if (internetContext) {
     messages.push({
       role: "system",
-      content: `Resultados de pesquisa na internet para esta pergunta:\n${JSON.stringify(internetResults, null, 2)}`
+      content: `Contexto de busca na internet para esta pergunta:\n${JSON.stringify(internetContext, null, 2)}`
     });
   }
 
@@ -310,11 +342,12 @@ async function askGroq({ message, history, profileSummary, userPreferences, offi
 
   const answer = sanitizeModelAnswer(data?.choices?.[0]?.message?.content);
 
-  return answer || "Nao foi possivel responder com seguranca agora. Tente novamente em instantes.";
+  return answer || "Resposta baseada em conhecimento geral. Dados em tempo real indisponiveis.";
 }
 
 module.exports = {
   askGroq,
   askGroqStream,
-  buildMessages
+  buildMessages,
+  buildInternetContext
 };

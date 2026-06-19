@@ -344,7 +344,7 @@ test.describe("Settings Modal Button Functionality", () => {
 
   test("settings tab buttons are present and clickable", async ({ page }) => {
     const settingsNavItems = page.locator(".settings-nav-item");
-    await expect(settingsNavItems).toHaveCount(2);
+    await expect(settingsNavItems).toHaveCount(3);
   });
 
   test("settings toggle switches change values", async ({ page }) => {

@@ -71,7 +71,7 @@ function stripContradictoryLeadIn(text) {
   return input;
 }
 
-const FRIENDLY_DATA_FALLBACK = "Não consegui obter dados atualizados neste momento. Tente novamente em alguns minutos.";
+const FRIENDLY_DATA_FALLBACK = "Resposta baseada em conhecimento geral. Dados em tempo real indisponiveis.";
 
 function stripTechnicalLeakLines(text) {
   const technicalPatterns = [

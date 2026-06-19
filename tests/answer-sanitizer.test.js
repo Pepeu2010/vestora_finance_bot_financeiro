@@ -76,6 +76,6 @@ test("usa fallback amigavel quando so restam detalhes tecnicos", () => {
 
   assert.equal(
     sanitizeModelAnswer(input),
-    "Não consegui obter dados atualizados neste momento. Tente novamente em alguns minutos."
+    "Resposta baseada em conhecimento geral. Dados em tempo real indisponiveis."
   );
 });
