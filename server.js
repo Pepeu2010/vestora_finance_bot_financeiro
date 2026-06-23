@@ -3,6 +3,7 @@ require("dotenv").config();
 const crypto = require("crypto");
 const express = require("express");
 const helmet = require("helmet");
+const compression = require("compression");
 const rateLimit = require("express-rate-limit");
 const bcrypt = require("bcryptjs");
 const cookieParser = require("cookie-parser");
@@ -109,6 +110,13 @@ function clearFailedLogins(ip) {
 }
 
 app.disable("x-powered-by");
+
+app.use(compression({
+  filter: (req, res) => {
+    if (req.headers["x-no-compression"]) return false;
+    return compression.filter(req, res);
+  }
+}));
 
 app.use(helmet({
   contentSecurityPolicy: {
