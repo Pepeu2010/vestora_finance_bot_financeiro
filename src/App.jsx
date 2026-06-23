@@ -2582,8 +2582,9 @@ export default function App() {
                     {showChangePassword ? (
                       <form onSubmit={handlePasswordSave} style={{ display: "grid", gap: "12px", padding: "12px", border: "1px solid rgba(190, 255, 232, 0.1)", borderRadius: "12px", background: "rgba(0,0,0,0.15)", marginBottom: "16px" }}>
                         <div style={{ display: "grid", gap: "4px" }}>
-                          <label style={{ fontSize: "12px", fontWeight: "700" }}>{t("currentPasswordLabel")}</label>
+                          <label htmlFor="currentPassword" style={{ fontSize: "12px", fontWeight: "700" }}>{t("currentPasswordLabel")}</label>
                           <input
+                            id="currentPassword"
                             type="password"
                             required
                             className="settings-input"
@@ -2592,8 +2593,9 @@ export default function App() {
                           />
                         </div>
                         <div style={{ display: "grid", gap: "4px" }}>
-                          <label style={{ fontSize: "12px", fontWeight: "700" }}>{t("newPasswordLabel")}</label>
+                          <label htmlFor="newPassword" style={{ fontSize: "12px", fontWeight: "700" }}>{t("newPasswordLabel")}</label>
                           <input
+                            id="newPassword"
                             type="password"
                             required
                             className="settings-input"
@@ -2602,8 +2604,9 @@ export default function App() {
                           />
                         </div>
                         <div style={{ display: "grid", gap: "4px" }}>
-                          <label style={{ fontSize: "12px", fontWeight: "700" }}>{t("confirmNewPasswordLabel")}</label>
+                          <label htmlFor="confirmPassword" style={{ fontSize: "12px", fontWeight: "700" }}>{t("confirmNewPasswordLabel")}</label>
                           <input
+                            id="confirmPassword"
                             type="password"
                             required
                             className="settings-input"

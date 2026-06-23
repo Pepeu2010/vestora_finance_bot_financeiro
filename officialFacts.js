@@ -1,14 +1,9 @@
+const { normalizeText } = require("./utils");
+
 const CACHE_TTL_MS = 1000 * 60 * 60 * 6;
 const REQUEST_TIMEOUT_MS = 6500;
 
 const cache = new Map();
-
-function normalizeText(text) {
-  return String(text || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-}
 
 function stripHtml(html) {
   return String(html || "")

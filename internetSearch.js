@@ -1,3 +1,5 @@
+const { normalizeText } = require("./utils");
+
 const SEARCH_TIMEOUT_MS = Number(process.env.WEB_SEARCH_TIMEOUT_MS || 12000);
 const PROVIDER_TIMEOUT_MS = Number(process.env.WEB_SEARCH_PROVIDER_TIMEOUT_MS || 5000);
 const PAGE_FETCH_TIMEOUT_MS = Number(process.env.WEB_SEARCH_PAGE_TIMEOUT_MS || 4000);
@@ -36,12 +38,7 @@ const SEARCH_CACHE = new Map();
 const IN_FLIGHT_SEARCHES = new Map();
 const MAX_CACHE_SIZE = 200;
 
-function normalizeText(text) {
-  return String(text || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-}
+
 
 function logSearch(level, event, details = {}) {
   const payload = {
@@ -882,61 +879,6 @@ async function searchDuckDuckGoLite(query) {
   }
 
   return prioritizeResults(results);
-}
-
-async function searchBing(query) {
-  const response = await fetch(`https://www.bing.com/search?q=${encodeURIComponent(query)}`, {
-    headers: makeBrowserHeaders(),
-    signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS)
-  });
-
-  if (!response.ok) {
-    throw new Error(`Bing retornou HTTP ${response.status}`);
-  }
-
-  const html = await readResponseText(response);
-  const chunks = html.split(/<li[^>]+class="[^"]*b_algo[^"]*"[^>]*>/i).slice(1);
-
-  return prioritizeResults(
-    chunks
-      .map((chunk) => {
-        const linkMatch = chunk.match(/<h2[^>]*>\s*<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
-        const snippetMatch = chunk.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
-        if (!linkMatch) return null;
-        return {
-          title: stripHtml(linkMatch[2]),
-          url: cleanSearchUrl(linkMatch[1]),
-          snippet: stripHtml(snippetMatch?.[1] || ""),
-          provider: "bing"
-        };
-      })
-      .filter(Boolean)
-      .slice(0, MAX_RESULTS * 2)
-  );
-}
-
-async function searchGoogleNewsRss(query) {
-  const response = await fetch(`https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=pt-BR&gl=BR&ceid=BR:pt-419`, {
-    headers: makeBrowserHeaders(),
-    signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS)
-  });
-
-  if (!response.ok) {
-    throw new Error(`Google News RSS retornou HTTP ${response.status}`);
-  }
-
-  const xml = await readResponseText(response);
-  const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)].slice(0, MAX_RESULTS * 2);
-
-  return prioritizeResults(
-    items.map(([, item]) => ({
-      title: decodeHtml((item.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/i) || item.match(/<title>([\s\S]*?)<\/title>/i) || [])[1] || ""),
-      url: decodeHtml((item.match(/<link>([\s\S]*?)<\/link>/i) || [])[1] || ""),
-      snippet: stripHtml((item.match(/<description><!\[CDATA\[([\s\S]*?)\]\]><\/description>/i) || item.match(/<description>([\s\S]*?)<\/description>/i) || [])[1] || ""),
-      source: "news.google.com",
-      provider: "google-news-rss"
-    }))
-  );
 }
 
 async function searchWithPlaywright(query) {
