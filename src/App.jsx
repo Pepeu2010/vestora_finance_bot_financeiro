@@ -1408,14 +1408,6 @@ export default function App() {
     return message;
   }
 
-  function removeMessage(id) {
-    if (!currentConversationId) return;
-
-    updateConversation(currentConversationId, (conversation) => ({
-      messages: (conversation.messages || []).filter((message) => message.id !== id)
-    }));
-  }
-
   function appendMessageToConversation(conversationId, message) {
     updateConversation(conversationId, (conversation) => ({
       messages: [...(conversation.messages || []), message]
@@ -1839,12 +1831,6 @@ export default function App() {
     setStatusText("Online");
     setIsSidebarOpen(false);
     inputRef.current?.focus();
-  }
-
-  function handleAccountInfo(label) {
-    setAccountMenuOpen(false);
-    setStatusText(label);
-    window.setTimeout(() => setStatusText("Online"), 1500);
   }
 
   function openProfileModal() {
