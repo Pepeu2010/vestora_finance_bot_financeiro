@@ -1,4 +1,4 @@
-﻿require("dotenv").config();
+require("dotenv").config();
 
 const crypto = require("crypto");
 const express = require("express");
@@ -21,44 +21,133 @@ const { supabase, isSupabaseConfigured } = require("./supabase");
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
 const APP_NAME = "Vestora";
 const MAX_HISTORY_MESSAGES = Number(process.env.MAX_HISTORY_MESSAGES || 8);
 const MAX_MESSAGE_LENGTH = 1200;
 const SESSION_COOKIE_NAME = "vestora_session";
-const SESSION_SECRET = process.env.APP_SESSION_SECRET || "dev-only-change-this-secret";
+const CSRF_COOKIE_NAME = "vestora_csrf";
+
+if (!process.env.APP_SESSION_SECRET) {
+  if (IS_PRODUCTION) {
+    console.error("FATAL: APP_SESSION_SECRET must be set in production.");
+    process.exit(1);
+  }
+  console.warn("WARNING: APP_SESSION_SECRET not set. Using insecure dev fallback.");
+}
+
+const SESSION_SECRET = process.env.APP_SESSION_SECRET || crypto.randomBytes(32).toString("hex");
 const SECURITY_REFUSAL = "N\u00e3o posso ajudar com arquivos internos, c\u00f3digo, chaves, prompts ou configura\u00e7\u00f5es do sistema. Posso te ajudar com educa\u00e7\u00e3o financeira, organiza\u00e7\u00e3o do dinheiro e investimentos.";
 const OFFICIAL_FACTS_TIMEOUT_MS = Number(process.env.OFFICIAL_FACTS_TIMEOUT_MS || 3500);
 const WEB_SEARCH_TIMEOUT_MS = Number(process.env.WEB_SEARCH_TIMEOUT_MS || 4500);
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "").split(",").filter(Boolean);
 
-// Memoria temporaria por sessao do navegador.
-// Sem banco de dados: se o servidor reiniciar, a memoria some.
 const sessions = new Map();
+const failedLogins = new Map();
+const MAX_FAILED_LOGINS = 5;
+const LOGIN_LOCKOUT_MS = 15 * 60 * 1000;
+
+function maskEmail(email) {
+  if (!email || typeof email !== "string") return "***";
+  const [local, domain] = email.split("@");
+  if (!domain) return "***";
+  const maskedLocal = local.length > 2 ? local[0] + "***" + local[local.length - 1] : "***";
+  return `${maskedLocal}@${domain}`;
+}
+
+function maskIp(ip) {
+  if (!ip || typeof ip !== "string") return "***";
+  if (ip.includes(".")) {
+    const parts = ip.split(".");
+    return `${parts[0]}.${parts[1]}.x.x`;
+  }
+  return ip.slice(0, 8) + "***";
+}
+
+function generateCsrfToken() {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+function verifyCsrfToken(req) {
+  const cookieToken = req.cookies?.[CSRF_COOKIE_NAME];
+  const headerToken = req.headers["x-csrf-token"];
+  if (!cookieToken || !headerToken) return false;
+  if (cookieToken.length !== headerToken.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(cookieToken), Buffer.from(headerToken));
+}
+
+function validatePasswordStrength(password) {
+  const p = String(password || "");
+  if (p.length < 8) return { valid: false, error: "Senha deve ter pelo menos 8 caracteres." };
+  if (p.length > 120) return { valid: false, error: "Senha muito longa (maximo 120 caracteres)." };
+  if (!/[A-Z]/.test(p)) return { valid: false, error: "Senha deve conter pelo menos uma letra maiuscula." };
+  if (!/[a-z]/.test(p)) return { valid: false, error: "Senha deve conter pelo menos uma letra minuscula." };
+  if (!/[0-9]/.test(p)) return { valid: false, error: "Senha deve conter pelo menos um numero." };
+  if (!/[^A-Za-z0-9]/.test(p)) return { valid: false, error: "Senha deve conter pelo menos um caractere especial." };
+  return { valid: true };
+}
+
+function isIpLocked(ip) {
+  const record = failedLogins.get(ip);
+  if (!record) return false;
+  if (record.count >= MAX_FAILED_LOGINS) {
+    if (Date.now() - record.lastAttempt < LOGIN_LOCKOUT_MS) return true;
+    failedLogins.delete(ip);
+  }
+  return false;
+}
+
+function recordFailedLogin(ip) {
+  const record = failedLogins.get(ip) || { count: 0, lastAttempt: 0 };
+  record.count++;
+  record.lastAttempt = Date.now();
+  failedLogins.set(ip, record);
+}
+
+function clearFailedLogins(ip) {
+  failedLogins.delete(ip);
+}
 
 app.disable("x-powered-by");
 
-app.use(
-  helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", "data:"],
-        connectSrc: ["'self'"],
-        fontSrc: ["'self'", "data:"],
-        objectSrc: ["'none'"],
-        baseUri: ["'self'"],
-        frameAncestors: ["'none'"],
-        formAction: ["'self'"]
-      }
-    },
-    crossOriginEmbedderPolicy: false
-  })
-);
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:"],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'", "data:"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      frameAncestors: ["'none'"],
+      formAction: ["'self'"]
+    }
+  },
+  crossOriginEmbedderPolicy: false,
+  permissionsPolicy: {
+    features: {
+      camera: ["()"],
+      microphone: ["()"],
+      geolocation: ["()"],
+      payment: ["()"],
+      usb: ["()"],
+      "interest-cohort": ["()"]
+    }
+  }
+}));
+
+if (IS_PRODUCTION) {
+  app.use((req, res, next) => {
+    res.setHeader("Content-Security-Policy", "upgrade-insecure-requests");
+    next();
+  });
+}
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 1000,
+  limit: IS_PRODUCTION ? 600 : 1000,
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) => req.path === "/api/health",
@@ -69,7 +158,7 @@ const apiLimiter = rateLimit({
 
 const chatLimiter = rateLimit({
   windowMs: 60 * 1000,
-  limit: 18,
+  limit: 12,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -79,9 +168,10 @@ const chatLimiter = rateLimit({
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 10,
+  limit: 8,
   standardHeaders: true,
   legacyHeaders: false,
+  skipSuccessfulRequests: true,
   message: {
     error: "Muitas tentativas de login. Aguarde alguns minutos antes de tentar novamente."
   }
@@ -94,27 +184,35 @@ app.use(cookieParser());
 app.use((req, res, next) => {
   if (!req.path.startsWith("/api/")) return next();
 
-  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
 
   const origin = req.get("origin");
   const host = req.get("host");
 
-  if (origin && host) {
-    try {
-      const parsedOrigin = new URL(origin);
-      const requestUrl = new URL(`${req.protocol}://${host}`);
-      const isLocalDev =
-        ["localhost", "127.0.0.1"].includes(parsedOrigin.hostname) &&
-        ["localhost", "127.0.0.1"].includes(requestUrl.hostname);
+  if (origin) {
+    let allowed = false;
 
-      const sameHost = parsedOrigin.host === host;
-      const sameHostname = parsedOrigin.hostname === requestUrl.hostname;
-
-      if (!sameHost && !(isLocalDev && sameHostname)) {
-        return res.status(403).json({ error: "Origem não permitida." });
+    if (ALLOWED_ORIGINS.length > 0) {
+      allowed = ALLOWED_ORIGINS.some((allowedOrigin) => origin === allowedOrigin);
+    } else if (host) {
+      try {
+        const parsedOrigin = new URL(origin);
+        const requestUrl = new URL(`${req.protocol}://${host}`);
+        const isLocalDev =
+          !IS_PRODUCTION &&
+          ["localhost", "127.0.0.1"].includes(parsedOrigin.hostname) &&
+          ["localhost", "127.0.0.1"].includes(requestUrl.hostname);
+        allowed = parsedOrigin.host === host || (isLocalDev && parsedOrigin.hostname === requestUrl.hostname);
+      } catch {
+        allowed = false;
       }
-    } catch {
-      return res.status(403).json({ error: "Origem inválida." });
+    }
+
+    if (!allowed) {
+      console.warn(`[${new Date().toISOString()}] Blocked request from disallowed origin: ${maskIp(origin)}`);
+      return res.status(403).json({ error: "Origem nao permitida." });
     }
   }
 
@@ -209,15 +307,27 @@ function setSessionCookie(res, user) {
     id: user.id,
     email: user.email,
     name: user.name,
-    exp: Date.now() + 1000 * 60 * 60 * 24 * 7
+    exp: Date.now() + 1000 * 60 * 60 * 24 * (IS_PRODUCTION ? 7 : 1)
   });
 
   res.cookie(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    maxAge: 1000 * 60 * 60 * 24 * 7
+    sameSite: IS_PRODUCTION ? "strict" : "lax",
+    secure: IS_PRODUCTION,
+    maxAge: 1000 * 60 * 60 * 24 * (IS_PRODUCTION ? 7 : 1),
+    path: "/"
   });
+
+  const csrfToken = generateCsrfToken();
+  res.cookie(CSRF_COOKIE_NAME, csrfToken, {
+    httpOnly: false,
+    sameSite: IS_PRODUCTION ? "strict" : "lax",
+    secure: IS_PRODUCTION,
+    maxAge: 1000 * 60 * 60 * 24 * (IS_PRODUCTION ? 7 : 1),
+    path: "/"
+  });
+
+  return csrfToken;
 }
 
 function getAuthUser(req) {
@@ -281,7 +391,7 @@ function normalizeEmail(email) {
 }
 
 function validatePassword(password) {
-  return String(password || "").length >= 6 && String(password || "").length <= 120;
+  return validatePasswordStrength(password).valid;
 }
 
 function getSession(sessionId) {
@@ -441,8 +551,9 @@ function sanitizeMessage(text) {
 }
 
 function previewForLog(text) {
-  const clean = String(text || "").replace(/\s+/g, " ").trim();
-  return clean.length > 80 ? `${clean.slice(0, 80)}...` : clean;
+  const clean = String(text || "").replace(/[\r\n\t]/g, " ").replace(/\s+/g, " ").trim();
+  const sanitized = clean.replace(/[^\x20-\x7E\u00C0-\u00FF]/g, "?");
+  return sanitized.length > 80 ? `${sanitized.slice(0, 80)}...` : sanitized;
 }
 
 function parseMoneyValues(text) {
@@ -725,7 +836,20 @@ function isSensitiveSystemRequest(text) {
     "revele",
     "mostre seus arquivos",
     "liste seus arquivos",
-    "configuracao do servidor"
+    "configuracao do servidor",
+    "dump do banco",
+    "dump database",
+    "sql dump",
+    "extrair dados",
+    "exportar dados",
+    "dump de tabelas",
+    "schema do banco",
+    "database schema",
+    "credenciais",
+    "password",
+    "senha do banco",
+    "env var",
+    "variavel de ambiente"
   ];
 
   return sensitiveTerms.some((term) => normalized.includes(term));
@@ -817,13 +941,22 @@ function cleanOldSessions() {
   }
 }
 
+function cleanOldFailedLogins() {
+  const nowMs = Date.now();
+  for (const [ip, record] of failedLogins.entries()) {
+    if (nowMs - record.lastAttempt > LOGIN_LOCKOUT_MS) {
+      failedLogins.delete(ip);
+    }
+  }
+}
+
 setInterval(cleanOldSessions, 1000 * 60 * 30);
+setInterval(cleanOldFailedLogins, 1000 * 60 * 15);
 
 app.get("/api/health", (req, res) => {
   res.json({
     ok: true,
     app: APP_NAME,
-    sessions: sessions.size,
     supabase: isSupabaseConfigured
   });
 });
@@ -848,15 +981,24 @@ app.get("/api/auth/me", async (req, res) => {
 
 app.post("/api/auth/register", authLimiter, async (req, res) => {
   if (!isSupabaseConfigured) {
-    return res.status(503).json({ error: "Supabase nao configurado." });
+    return res.status(503).json({ error: "Servico nao disponivel." });
   }
 
   const name = String(req.body.name || "").trim().slice(0, 80);
   const email = normalizeEmail(req.body.email);
   const password = String(req.body.password || "");
 
-  if (!name || !email.includes("@") || !validatePassword(password)) {
-    return res.status(400).json({ error: "Informe nome, email valido e senha com pelo menos 6 caracteres." });
+  if (!name || name.length < 2) {
+    return res.status(400).json({ error: "Nome deve ter pelo menos 2 caracteres." });
+  }
+
+  if (!email || !email.includes("@") || email.length > 254) {
+    return res.status(400).json({ error: "Informe um email valido." });
+  }
+
+  const passwordCheck = validatePasswordStrength(password);
+  if (!passwordCheck.valid) {
+    return res.status(400).json({ error: passwordCheck.error });
   }
 
   try {
@@ -881,17 +1023,23 @@ app.post("/api/auth/register", authLimiter, async (req, res) => {
     const profile = await getSupabaseProfile(data.id).catch(() => null);
     const user = mergeUserWithProfile(data, profile);
 
-    setSessionCookie(res, user);
-    res.json({ user });
+    const csrfToken = setSessionCookie(res, user);
+    res.json({ user, csrfToken });
   } catch (error) {
-    console.error(`[${now()}] Erro ao cadastrar usuario:`, error.message);
-    res.status(500).json({ error: "Nao consegui criar sua conta." });
+    console.error(`[${now()}] Erro ao cadastrar usuario.`);
+    res.status(500).json({ error: "Nao foi possivel criar sua conta." });
   }
 });
 
 app.post("/api/auth/login", authLimiter, async (req, res) => {
   if (!isSupabaseConfigured) {
-    return res.status(503).json({ error: "Supabase nao configurado." });
+    return res.status(503).json({ error: "Servico nao disponivel." });
+  }
+
+  const clientIp = req.ip || req.headers["x-forwarded-for"] || "127.0.0.1";
+
+  if (isIpLocked(clientIp)) {
+    return res.status(429).json({ error: "Muitas tentativas. Aguarde alguns minutos." });
   }
 
   const email = normalizeEmail(req.body.email);
@@ -912,8 +1060,12 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {
 
     const valid = data ? await bcrypt.compare(password, data.password_hash) : false;
     if (!valid) {
+      recordFailedLogin(clientIp);
+      console.warn(`[${now()}] Login falhou para ${maskEmail(email)} de ${maskIp(clientIp)}`);
       return res.status(401).json({ error: "Email ou senha invalidos." });
     }
+
+    clearFailedLogins(clientIp);
 
     const baseUser = {
       id: data.id,
@@ -924,19 +1076,28 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {
     const profile = await getSupabaseProfile(data.id).catch(() => null);
     const user = mergeUserWithProfile(baseUser, profile);
 
-    setSessionCookie(res, user);
-    res.json({ user });
+    console.log(`[${now()}] Login bem-sucedido: ${maskEmail(email)}`);
+    const csrfToken = setSessionCookie(res, user);
+    res.json({ user, csrfToken });
   } catch (error) {
-    console.error(`[${now()}] Erro ao fazer login:`, error.message);
-    res.status(500).json({ error: "Nao consegui fazer login." });
+    console.error(`[${now()}] Erro ao fazer login.`);
+    res.status(500).json({ error: "Nao foi possivel fazer login." });
   }
 });
 
 app.post("/api/auth/logout", (req, res) => {
   res.clearCookie(SESSION_COOKIE_NAME, {
     httpOnly: true,
-    sameSite: "lax",
-    secure: false
+    sameSite: IS_PRODUCTION ? "strict" : "lax",
+    secure: IS_PRODUCTION,
+    path: "/"
+  });
+
+  res.clearCookie(CSRF_COOKIE_NAME, {
+    httpOnly: false,
+    sameSite: IS_PRODUCTION ? "strict" : "lax",
+    secure: IS_PRODUCTION,
+    path: "/"
   });
 
   res.json({ ok: true });
@@ -944,19 +1105,23 @@ app.post("/api/auth/logout", (req, res) => {
 
 app.patch("/api/auth/profile", requireAuth, async (req, res) => {
   if (!isSupabaseConfigured) {
-    return res.status(503).json({ error: "Supabase nao configurado." });
+    return res.status(503).json({ error: "Servico nao disponivel." });
   }
 
   const name = String(req.body.name || "").trim().slice(0, 80);
   const usernameInput = String(req.body.username || "").trim().toLowerCase();
   const username = usernameInput.replace(/[^a-z0-9._-]/g, "").slice(0, 30);
 
-  if (!name) {
-    return res.status(400).json({ error: "Nome nao pode ficar vazio." });
+  if (!name || name.length < 2) {
+    return res.status(400).json({ error: "Nome deve ter pelo menos 2 caracteres." });
   }
 
-  if (username && username.length < 3) {
-    return res.status(400).json({ error: "Nome de usuario deve ter pelo menos 3 caracteres." });
+  if (username && (username.length < 3 || username.length > 30)) {
+    return res.status(400).json({ error: "Nome de usuario deve ter entre 3 e 30 caracteres." });
+  }
+
+  if (username && /^[._-]/.test(username)) {
+    return res.status(400).json({ error: "Nome de usuario nao pode comecar com ., _ ou -." });
   }
 
   try {
@@ -996,17 +1161,16 @@ app.patch("/api/auth/profile", requireAuth, async (req, res) => {
 
     const updatedUser = mergeUserWithProfile(req.user, data);
 
-    setSessionCookie(res, updatedUser);
-    res.json({ user: updatedUser });
+    const csrfToken = setSessionCookie(res, updatedUser);
+    res.json({ user: updatedUser, csrfToken });
   } catch (error) {
-    console.error(`[${now()}] Erro ao atualizar perfil:`, error.message);
-    res.status(500).json({ error: "Nao consegui atualizar seu perfil." });
+    console.error(`[${now()}] Erro ao atualizar perfil.`);
+    res.status(500).json({ error: "Nao foi possivel atualizar seu perfil." });
   }
 });
 
 app.get("/api/conversations", requireAuth, async (req, res) => {
   const userId = req.user.id;
-
 
   if (!isSupabaseConfigured) {
     return res.json({ configured: false, conversations: [] });
@@ -1023,8 +1187,8 @@ app.get("/api/conversations", requireAuth, async (req, res) => {
 
     res.json({ configured: true, conversations: data });
   } catch (error) {
-    console.error(`[${now()}] Erro ao listar conversas:`, error.message);
-    res.status(500).json({ error: "Nao consegui listar as conversas." });
+    console.error(`[${now()}] Erro ao listar conversas.`);
+    res.status(500).json({ error: "Nao foi possivel listar as conversas." });
   }
 });
 
@@ -1051,8 +1215,8 @@ app.get("/api/conversations/:id/messages", requireAuth, async (req, res) => {
       }))
     });
   } catch (error) {
-    console.error(`[${now()}] Erro ao buscar mensagens:`, error.message);
-    res.status(500).json({ error: "Nao consegui carregar esta conversa." });
+    console.error(`[${now()}] Erro ao buscar mensagens.`);
+    res.status(500).json({ error: "Nao foi possivel carregar esta conversa." });
   }
 });
 
@@ -1081,8 +1245,8 @@ app.patch("/api/conversations/:id", requireAuth, async (req, res) => {
 
     res.json({ configured: true });
   } catch (error) {
-    console.error(`[${now()}] Erro ao renomear conversa:`, error.message);
-    res.status(500).json({ error: "Nao consegui renomear a conversa." });
+    console.error(`[${now()}] Erro ao renomear conversa.`);
+    res.status(500).json({ error: "Nao foi possivel renomear a conversa." });
   }
 });
 
@@ -1126,8 +1290,8 @@ app.delete("/api/conversations/:id", requireAuth, async (req, res) => {
 
     res.json({ configured: true });
   } catch (error) {
-    console.error(`[${now()}] Erro ao apagar conversa:`, error.message);
-    res.status(500).json({ error: "Nao consegui apagar a conversa." });
+    console.error(`[${now()}] Erro ao apagar conversa.`);
+    res.status(500).json({ error: "Nao foi possivel apagar a conversa." });
   }
 });
 
@@ -1164,14 +1328,14 @@ app.delete("/api/conversations", requireAuth, async (req, res) => {
 
     res.json({ configured: true });
   } catch (error) {
-    console.error(`[${now()}] Erro ao apagar todas as conversas:`, error.message);
-    res.status(500).json({ error: "Nao consegui apagar as conversas." });
+    console.error(`[${now()}] Erro ao apagar todas as conversas.`);
+    res.status(500).json({ error: "Nao foi possivel apagar as conversas." });
   }
 });
 
 app.patch("/api/auth/password", requireAuth, async (req, res) => {
   if (!isSupabaseConfigured) {
-    return res.status(503).json({ error: "Supabase nao configurado." });
+    return res.status(503).json({ error: "Servico nao disponivel." });
   }
 
   const { currentPassword, newPassword } = req.body;
@@ -1180,8 +1344,13 @@ app.patch("/api/auth/password", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "Informe a senha atual e a nova senha." });
   }
 
-  if (!validatePassword(newPassword)) {
-    return res.status(400).json({ error: "A nova senha deve ter pelo menos 6 caracteres." });
+  const passwordCheck = validatePasswordStrength(newPassword);
+  if (!passwordCheck.valid) {
+    return res.status(400).json({ error: passwordCheck.error });
+  }
+
+  if (currentPassword === newPassword) {
+    return res.status(400).json({ error: "A nova senha deve ser diferente da atual." });
   }
 
   try {
@@ -1198,6 +1367,7 @@ app.patch("/api/auth/password", requireAuth, async (req, res) => {
 
     const valid = await bcrypt.compare(currentPassword, data.password_hash);
     if (!valid) {
+      console.warn(`[${now()}] Tentativa de alteracao de senha com senha incorreta: ${maskEmail(req.user.email)}`);
       return res.status(401).json({ error: "Senha atual incorreta." });
     }
 
@@ -1209,10 +1379,11 @@ app.patch("/api/auth/password", requireAuth, async (req, res) => {
 
     if (updateError) throw updateError;
 
+    console.log(`[${now()}] Senha alterada com sucesso: ${maskEmail(req.user.email)}`);
     res.json({ ok: true });
   } catch (error) {
-    console.error(`[${now()}] Erro ao alterar senha:`, error.message);
-    res.status(500).json({ error: "Nao consegui alterar sua senha." });
+    console.error(`[${now()}] Erro ao alterar senha.`);
+    res.status(500).json({ error: "Nao foi possivel alterar sua senha." });
   }
 });
 
@@ -1238,7 +1409,7 @@ app.get("/api/auth/sessions", requireAuth, (req, res) => {
       {
         id: "current",
         device: `${browser} em ${os}`,
-        ip: ip.replace("::ffff:", ""),
+        ip: maskIp(ip.replace("::ffff:", "")),
         current: true,
         lastActive: new Date().toISOString()
       }
@@ -1250,9 +1421,31 @@ app.get("/api/auth/sessions", requireAuth, (req, res) => {
  * Shared logic to prepare a chat request (validation, security, history, searches).
  * Returns an object with all prepared data, or sends a response and returns null.
  */
+function sanitizeSettings(settings) {
+  if (!settings || typeof settings !== "object") return {};
+  const allowed = {};
+  const safeKeys = [
+    "estiloTom", "acolhedor", "entusiasmado", "listasCabecalhos", "emoji",
+    "respostasRapidas", "instrucoesPersonalizadas", "apelido", "ocupacao",
+    "maisSobreVoce", "referenciarMemorias", "referenciarHistorico",
+    "buscaNaWeb", "lousa", "buscaConector", "idioma", "tema"
+  ];
+  for (const key of safeKeys) {
+    if (key in settings) {
+      const val = settings[key];
+      if (typeof val === "boolean") {
+        allowed[key] = val;
+      } else if (typeof val === "string") {
+        allowed[key] = val.slice(0, 500);
+      }
+    }
+  }
+  return allowed;
+}
+
 async function prepareChatRequest(req, res) {
   const userMessage = sanitizeMessage(req.body.message);
-  const userSettings = req.body.settings || {};
+  const userSettings = sanitizeSettings(req.body.settings);
   const conversationIdFromRequest = isUuid(req.body.conversationId) ? req.body.conversationId : "";
   const session = getSession(req.body.sessionId || conversationIdFromRequest);
 

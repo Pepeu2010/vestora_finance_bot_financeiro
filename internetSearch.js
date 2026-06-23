@@ -34,6 +34,7 @@ const PRIORITY_DOMAINS = [
 
 const SEARCH_CACHE = new Map();
 const IN_FLIGHT_SEARCHES = new Map();
+const MAX_CACHE_SIZE = 200;
 
 function normalizeText(text) {
   return String(text || "")
@@ -652,7 +653,38 @@ function findRelevantSnippet(text, query, size = 760) {
   return cleanText.slice(start, start + size).trim();
 }
 
+function isUrlSafeForFetch(url) {
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.toLowerCase();
+
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+
+    const blockedHosts = [
+      "localhost", "127.0.0.1", "::1", "[::1]",
+      "0.0.0.0", "169.254.169.254",
+      "metadata.google.internal", "169.254.169.254"
+    ];
+
+    if (blockedHosts.includes(hostname)) return false;
+
+    if (/^10\./.test(hostname) || /^172\.(1[6-9]|2\d|3[01])\./.test(hostname) || /^192\.168\./.test(hostname)) {
+      return false;
+    }
+
+    if (hostname.endsWith(".internal") || hostname.endsWith(".local") || hostname.endsWith(".localhost")) {
+      return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function fetchPageSnippet(url, query) {
+  if (!isUrlSafeForFetch(url)) return "";
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), PAGE_FETCH_TIMEOUT_MS);
 
@@ -662,7 +694,8 @@ async function fetchPageSnippet(url, query) {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36"
       },
-      signal: controller.signal
+      signal: controller.signal,
+      redirect: "follow"
     });
 
     if (!response.ok) return "";
@@ -671,6 +704,9 @@ async function fetchPageSnippet(url, query) {
     if (!contentType.includes("text/html") && !contentType.includes("text/plain") && !contentType.includes("xml")) {
       return "";
     }
+
+    const finalUrl = response.url;
+    if (finalUrl && !isUrlSafeForFetch(finalUrl)) return "";
 
     return findRelevantSnippet(await readResponseText(response), query);
   } catch {
@@ -970,6 +1006,10 @@ function getCachedSearch(cacheKey, ttlMs) {
 }
 
 function setCachedSearch(cacheKey, value) {
+  if (SEARCH_CACHE.size >= MAX_CACHE_SIZE) {
+    const oldestKey = SEARCH_CACHE.keys().next().value;
+    SEARCH_CACHE.delete(oldestKey);
+  }
   SEARCH_CACHE.set(cacheKey, {
     createdAt: Date.now(),
     value

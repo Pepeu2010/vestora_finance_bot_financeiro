@@ -19,3 +19,22 @@ create index if not exists conversations_device_id_updated_at_idx
 
 create index if not exists messages_conversation_id_created_at_idx
   on messages (conversation_id, created_at asc);
+
+alter table conversations enable row level security;
+alter table messages enable row level security;
+
+create policy "conversations_user_isolation" on conversations
+  for all using (user_id = auth.uid() or user_id is null);
+
+create policy "messages_user_isolation" on messages
+  for all using (
+    conversation_id in (
+      select id from conversations where user_id = auth.uid() or user_id is null
+    )
+  );
+
+create policy "conversations_service_role_all" on conversations
+  for all using (true) with check (true);
+
+create policy "messages_service_role_all" on messages
+  for all using (true) with check (true);
