@@ -4,14 +4,21 @@ const { sanitizeModelAnswer } = require("./answerSanitizer");
 const apiKey = process.env.GROQ_API_KEY;
 const model = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
 const baseUrl = process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1";
-const maxTokens = Number(process.env.GROQ_MAX_TOKENS || 1200);
+// Limite de saída por chamada. Respostas financeiras completas precisam de espaço,
+// e o modelo suporta janela de 128k tokens. Usado como max_tokens em cada chamada.
+const maxTokens = Number(process.env.GROQ_MAX_TOKENS || 2000);
 
 // Estimativa grosseira: ~4 caracteres por token
 const CHARS_PER_TOKEN = 4;
 // Limite de tokens para o prompt de entrada (deixa margem para resposta)
-const MAX_INPUT_TOKENS = Number(process.env.GROQ_MAX_INPUT_TOKENS || 5500);
+const MAX_INPUT_TOKENS = Number(process.env.GROQ_MAX_INPUT_TOKENS || 6000);
 const MAX_SNIPPET_CHARS = 220;
 const MAX_SEARCH_RESULTS = 4;
+
+// Número máximo de continuações automáticas quando a resposta for cortada por
+// limite de comprimento (finish_reason === "length"). Cada continuação permite
+// até mais `maxTokens` tokens, garantindo que respostas longas não fiquem pela metade.
+const MAX_CONTINUATIONS = 3;
 
 /**
  * Estima o número de tokens de uma string.
@@ -161,9 +168,9 @@ Regra adicional obrigatoria:
 - ANTES DE RESPONDER, PENSE: (1) O que o usuario quer saber exatamente? (2) Tenho dados suficientes? (3) Qual a resposta mais direta e precisa? (4) Preciso buscar mais informacao na internet? Depois de pensar, gere a resposta final.
 - Nao mencione ferramentas internas usadas para pesquisar. Se for util, cite apenas o nome da fonte ou site encontrado, como Banco Central, CAIXA, Ministerio das Cidades, B3, Receita Federal, CoinGecko ou AwesomeAPI.
 - So use "Atualizado agora" ou equivalente quando houver consulta externa bem-sucedida ou dado oficial consultado agora.
-- Para economizar tokens, responda de forma objetiva: normalmente 4 a 8 frases ou ate 5 bullets curtos.
-- So escreva respostas longas quando o usuario pedir detalhes, comparacao completa, plano passo a passo ou tabela.
-- Evite repetir avisos longos; cite riscos de forma curta e clara.
+- RESPOSTA COMPLETA: responda de forma direta, mas sem cortar o conteudo. Se a pergunta exigir detalhes, passo a passo, comparacoes, listas ou tabelas, inclua tudo ate a resposta estar realmente completa. Nao encurte a ponto de deixar informacao faltando. Se a pergunta for simples, uma resposta curta e suficiente; se for complexa, detalhe o necessario. So pare quando tiver respondido por inteiro o que foi perguntado.
+- Cite riscos de forma curta e clara quando relevante, sem repetir avisos longos.
+- Responda qualquer pergunta que tenha conexao com a area financeira: dinheiro, orcamento, dividas, credito, financiamento, imoveis, investimentos, impostos, beneficios (FGTS, INSS, Bolsa Familia), cotacoes, taxa de juros, salario minimo, programas publicos (Minha Casa Minha Vida), abrir ou gerir negocios, plano de negocios, precificacao, fluxo de caixa, educacao financeira e temas correlatos. Nunca recuse por "fora do escopo" se houver qualquer ligacao com dinheiro ou financas; ao menos esclareca a parte financeira da duvida.
  - Responda somente com a resposta final para o usuario.${userPreferences ? `\n\nPreferencias e personalizacao do usuario: ${userPreferences}` : ""}`
     }
   ];
@@ -214,19 +221,11 @@ function buildMessages({ message, history, profileSummary, userPreferences, offi
 }
 
 /**
- * Streaming version of askGroq — yields text chunks as they arrive.
- * Returns an async generator that yields strings.
+ * Faz uma única chamada de stream à Groq e devolve os chunks + o finish_reason.
+ * Retorna { finishReason, text }. Não decide sobre continuação — quem decide é
+ * o chamador.
  */
-async function* askGroqStream({ message, history, profileSummary, userPreferences, officialFacts, internetResults }) {
-  if (!apiKey || apiKey === "COLE_SUA_CHAVE_GROQ_AQUI") {
-    yield "A chave da Groq ainda nao foi configurada. Edite o arquivo .env, insira sua GROQ_API_KEY e reinicie o servidor.";
-    return;
-  }
-
-  const { trimmedHistory, trimmedInternet } = trimContext({
-    message, history, profileSummary, userPreferences, officialFacts, internetResults
-  });
-
+async function singleStreamRequest(messages) {
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
@@ -235,9 +234,7 @@ async function* askGroqStream({ message, history, profileSummary, userPreference
     },
     body: JSON.stringify({
       model,
-      messages: buildMessages({
-        message, history: trimmedHistory, profileSummary, userPreferences, officialFacts, internetResults: trimmedInternet
-      }),
+      messages,
       temperature: 0.1,
       max_tokens: maxTokens,
       top_p: 0.9,
@@ -255,6 +252,8 @@ async function* askGroqStream({ message, history, profileSummary, userPreference
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let text = "";
+  let finishReason = null;
 
   try {
     while (true) {
@@ -270,12 +269,16 @@ async function* askGroqStream({ message, history, profileSummary, userPreference
         if (!trimmed || !trimmed.startsWith("data:")) continue;
 
         const data = trimmed.slice(5).trim();
-        if (data === "[DONE]") return;
+        if (data === "[DONE]") {
+          return { finishReason, text };
+        }
 
         try {
           const parsed = JSON.parse(data);
-          const content = parsed.choices?.[0]?.delta?.content;
-          if (content) yield content;
+          const choice = parsed.choices?.[0];
+          const content = choice?.delta?.content;
+          if (content) text += content;
+          if (choice?.finish_reason) finishReason = choice.finish_reason;
         } catch {}
       }
     }
@@ -286,14 +289,121 @@ async function* askGroqStream({ message, history, profileSummary, userPreference
       if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
         try {
           const parsed = JSON.parse(trimmed.slice(5).trim());
-          const content = parsed.choices?.[0]?.delta?.content;
-          if (content) yield content;
+          const choice = parsed.choices?.[0];
+          const content = choice?.delta?.content;
+          if (content) text += content;
+          if (choice?.finish_reason) finishReason = choice.finish_reason;
         } catch {}
       }
     }
   } finally {
     reader.releaseLock();
   }
+
+  return { finishReason, text };
+}
+
+/**
+ * Constrói as mensagens de continuação: reenvia o contexto original (histórico
+ * + dados) e instrui o modelo a continuar a resposta exatamente de onde parou,
+ * sem repetir conteúdo e sem introduções.
+ */
+function buildContinuationMessages({ baseMessages, soFar }) {
+  const continuation = [
+    ...baseMessages,
+    {
+      role: "assistant",
+      content: soFar
+    },
+    {
+      role: "user",
+      content:
+        "Continue sua resposta anterior EXATAMENTE de onde ela parou. " +
+        "Nao repita o que ja foi dito, nao escreva introducoes como 'Continuando' ou 'Como eu estava dizendo'. " +
+        "Apenas retome o texto de forma natural e conclua a resposta ate o fim, mantendo o mesmo tom e formato."
+    }
+  ];
+  return continuation;
+}
+
+/**
+ * Streaming version of askGroq — yields text chunks as they arrive.
+ * Detecta respostas cortadas por limite de comprimento (finish_reason === "length")
+ * e continua automaticamente, preservando o fluxo contínuo para o cliente.
+ * Retorna um async generator que produz strings.
+ */
+async function* askGroqStream({ message, history, profileSummary, userPreferences, officialFacts, internetResults }) {
+  if (!apiKey || apiKey === "COLE_SUA_CHAVE_GROQ_AQUI") {
+    yield "A chave da Groq ainda nao foi configurada. Edite o arquivo .env, insira sua GROQ_API_KEY e reinicie o servidor.";
+    return;
+  }
+
+  const { trimmedHistory, trimmedInternet } = trimContext({
+    message, history, profileSummary, userPreferences, officialFacts, internetResults
+  });
+
+  const baseMessages = buildMessages({
+    message, history: trimmedHistory, profileSummary, userPreferences, officialFacts, internetResults: trimmedInternet
+  });
+
+  let soFar = "";
+  let messages = baseMessages;
+
+  for (let attempt = 0; attempt <= MAX_CONTINUATIONS; attempt += 1) {
+    const { finishReason, text } = await singleStreamRequest(messages);
+    soFar += text;
+    // Emite apenas o trecho novo desta chamada
+    if (text) yield text;
+
+    // Terminou naturalmente (stop) ou outro motivo que não length -> pronto.
+    const truncated = finishReason === "length";
+    if (!truncated) return;
+
+    // Foi cortado por comprimento: prepara continuação (se ainda houver budget).
+    if (attempt === MAX_CONTINUATIONS) {
+      // Chegamos ao limite de segurança: emite um encerramento limpo.
+      const tail = soFar.trimEnd();
+      if (!/[.!?…]\s*$/.test(tail) && !/\n[-•*\d]/.test(tail.slice(-3))) {
+        yield "\n\n(Resposta concluída dentro do limite de tamanho disponível.)";
+      }
+      return;
+    }
+
+    messages = buildContinuationMessages({ baseMessages, soFar });
+  }
+}
+
+/**
+ * Faz uma única chamada (não-streaming) à Groq e devolve { finishReason, text }.
+ */
+async function singleRequest(messages) {
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature: 0.1,
+      max_tokens: maxTokens,
+      top_p: 0.9
+    })
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    const errMsg = data?.error?.message || "Erro ao chamar a API da Groq.";
+    throw new Error(errMsg);
+  }
+
+  const choice = data?.choices?.[0];
+  return {
+    finishReason: choice?.finish_reason || null,
+    text: choice?.message?.content || ""
+  };
 }
 
 async function askGroq({ message, history, profileSummary, userPreferences, officialFacts, internetResults }) {
@@ -311,36 +421,39 @@ async function askGroq({ message, history, profileSummary, userPreferences, offi
     internetResults
   });
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model,
-      messages: formatMessages({
-        message,
-        history: trimmedHistory,
-        profileSummary,
-        userPreferences,
-        officialFacts,
-        internetResults: trimmedInternet
-      }),
-      temperature: 0.1,
-      max_tokens: maxTokens,
-      top_p: 0.9
-    })
+  const baseMessages = formatMessages({
+    message,
+    history: trimmedHistory,
+    profileSummary,
+    userPreferences,
+    officialFacts,
+    internetResults: trimmedInternet
   });
 
-  const data = await response.json();
+  let rawAnswer = "";
+  let messages = baseMessages;
 
-  if (!response.ok) {
-    const errMsg = data?.error?.message || "Erro ao chamar a API da Groq.";
-    throw new Error(errMsg);
+  // Mesma lógica de continuação da versão de streaming: se a resposta for cortada
+  // por limite de comprimento, continua automaticamente até terminar (ou até o
+  // limite de segurança).
+  for (let attempt = 0; attempt <= MAX_CONTINUATIONS; attempt += 1) {
+    const { finishReason, text } = await singleRequest(messages);
+    rawAnswer += text;
+
+    if (finishReason !== "length") break;
+
+    if (attempt === MAX_CONTINUATIONS) {
+      const tail = rawAnswer.trimEnd();
+      if (!/[.!?…]\s*$/.test(tail) && !/\n[-•*\d]/.test(tail.slice(-3))) {
+        rawAnswer += "\n\n(Resposta concluída dentro do limite de tamanho disponível.)";
+      }
+      break;
+    }
+
+    messages = buildContinuationMessages({ baseMessages, soFar: rawAnswer });
   }
 
-  const answer = sanitizeModelAnswer(data?.choices?.[0]?.message?.content);
+  const answer = sanitizeModelAnswer(rawAnswer);
 
   return answer || "Resposta baseada em conhecimento geral. Dados em tempo real indisponiveis.";
 }
