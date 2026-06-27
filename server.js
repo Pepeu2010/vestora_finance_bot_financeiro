@@ -629,6 +629,28 @@ function parseMoneyValues(text) {
   return values;
 }
 
+function parseMoneyToken(rawValue = "", decimalPart = "", multiplier = "") {
+  let value = Number(String(rawValue).replace(/\./g, ""));
+  if (decimalPart) value += Number(`0.${String(decimalPart).padEnd(2, "0")}`);
+  if (multiplier) value *= 1000;
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function escapeRegExp(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function findLabeledMoneyValue(text, terms) {
+  const termPattern = terms.map(escapeRegExp).join("|");
+  const regex = new RegExp(
+    `(?:${termPattern})(?:\s+(?:mensal|mensais|bruta|bruto|liquida|liquido))?\\s*(?:e|eh|é|de|do|da|:)?\\s*(?:r\\$\\s*)?(\\d+(?:\\.\\d{3})*)(?:,(\\d{1,2}))?\\s*(mil|k)?`,
+    "i"
+  );
+  const match = String(text || "").match(regex);
+  if (!match) return null;
+  return parseMoneyToken(match[1], match[2], match[3]);
+}
+
 function formatCurrency(value) {
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
@@ -639,26 +661,28 @@ function formatCurrency(value) {
 
 function updateProfileFromMessage(session, text) {
   const normalized = normalizeText(text);
-  const values = parseMoneyValues(text);
   session.profile = session.profile || {};
 
-  const setFirstValue = (key, terms) => {
-    if (terms.some((term) => normalized.includes(term)) && values[0]) {
-      session.profile[key] = values[0];
+  const labeledFields = [
+    ["renda", ["renda", "ganho", "salario", "salário", "recebo"]],
+    ["gastos", ["gasto", "gastos", "despesa", "despesas", "custo mensal"]],
+    ["dividas", ["divida", "dividas", "dívida", "dívidas", "devo", "financiamento atrasado"]],
+    ["entrada", ["entrada"]],
+    ["valorImovel", ["valor do imovel", "valor do imóvel", "imovel de", "imóvel de", "casa de", "apartamento de"]]
+  ];
+
+  for (const [key, terms] of labeledFields) {
+    const value = findLabeledMoneyValue(text, terms);
+    if (value) {
+      session.profile[key] = value;
     }
-  };
+  }
 
-  setFirstValue("renda", ["renda", "ganho", "salario", "recebo"]);
-  setFirstValue("gastos", ["gasto", "gastos", "despesa", "despesas", "custo mensal"]);
-  setFirstValue("dividas", ["divida", "dividas", "devo", "financiamento atrasado"]);
-  setFirstValue("entrada", ["entrada"]);
-  setFirstValue("valorImovel", ["valor do imovel", "imovel de", "casa de", "apartamento de"]);
+  const objective = extractObjectiveFromText(text);
+  if (objective) session.profile.objetivo = objective;
 
-  const objectiveMatch = text.match(/(?:objetivo|quero|pretendo)\s+(?:e|é|eh|:)?\s*([^.,\n]{4,80})/i);
-  if (objectiveMatch) session.profile.objetivo = objectiveMatch[1].trim();
-
-  const prazoMatch = text.match(/(\d{1,2})\s*(meses|anos|ano|mes)/i);
-  if (prazoMatch) session.profile.prazo = `${prazoMatch[1]} ${prazoMatch[2]}`;
+  const prazo = extractPrazoFromText(text);
+  if (prazo) session.profile.prazo = prazo;
 
   if (normalized.includes("conservador")) session.profile.perfil = "conservador";
   if (normalized.includes("moderado")) session.profile.perfil = "moderado";
@@ -679,6 +703,22 @@ function getProfileSummary(session) {
   if (profile.perfil) parts.push(`perfil ${profile.perfil}`);
 
   return parts.join("; ").slice(0, 360);
+}
+
+function extractObjectiveFromText(text) {
+  const explicitMatch = String(text || "").match(/(?:objetivo(?:\s+principal)?|meta)\s*(?:e|é|eh|:)?\s*([^.,\n]+?)(?=\s+e\s+meu\s+prazo\b|\s+com\s+prazo\b|[.!?\n]|$)/i);
+  if (explicitMatch) return explicitMatch[1].trim();
+
+  const genericMatch = String(text || "").match(/(?:quero|pretendo)\s+(?:e|é|eh|:)?\s*([^.,\n]+?)(?=\s+e\s+meu\s+prazo\b|\s+com\s+prazo\b|[.!?\n]|$)/i);
+  return genericMatch ? genericMatch[1].trim() : "";
+}
+
+function extractPrazoFromText(text) {
+  const direct = String(text || "").match(/(?:prazo|horizonte)\s*(?:e|é|eh|:)?\s*(a vida|vitalicio|vitalício|longo prazo|medio prazo|médio prazo|curto prazo|\d{1,2}\s*(?:meses|anos|ano|mes))/i);
+  if (direct) return direct[1].trim();
+
+  const numeric = String(text || "").match(/(\d{1,2})\s*(meses|anos|ano|mes)/i);
+  return numeric ? `${numeric[1]} ${numeric[2]}` : "";
 }
 
 function tryQuickCalculator(text, session, officialFacts) {
@@ -818,6 +858,55 @@ Atenção: o valor real depende de juros (atualmente ~9-12% a.a.), prazo (até 3
     const monthly = amount * rate;
     const yearly = amount * (Math.pow(1 + rate, 12) - 1);
     return `Com **${formatCurrency(amount)}** rendendo **${(rate * 100).toFixed(2).replace(".", ",")}% ao mês**, o rendimento aproximado seria **${formatCurrency(monthly)} por mês** e **${formatCurrency(yearly)} em 12 meses**, antes de impostos.\n\nAtenção: rentabilidade pode variar e impostos/liquidez mudam o resultado final.`;
+  }
+
+  const rendaInvest = profile.renda || findLabeledMoneyValue(text, ["renda", "ganho", "salario", "salário", "recebo"]);
+  const gastosInvest = profile.gastos || findLabeledMoneyValue(text, ["gasto", "gastos", "despesa", "despesas", "custo mensal"]);
+  if ((normalized.includes("investir") || normalized.includes("investimento") || normalized.includes("independencia financeira") || normalized.includes("independência financeira")) && rendaInvest && gastosInvest) {
+    const saldo = Math.max(0, rendaInvest - gastosInvest);
+    const objetivo = profile.objetivo || extractObjectiveFromText(text);
+    const prazoTexto = profile.prazo || extractPrazoFromText(text) || "longo prazo";
+    const prazoLongo = /a vida|longo prazo|10\s*anos|20\s*anos|30\s*anos/i.test(String(prazoTexto));
+    const perfil = profile.perfil || (prazoLongo ? "moderado" : "conservador");
+    const reservaMin = gastosInvest * 6;
+    const reservaMax = gastosInvest * 12;
+    const liquidez = Math.round(saldo * 0.3);
+    const baseInvest = Math.max(0, saldo - liquidez);
+
+    const allocation = perfil === "arrojado"
+      ? [
+          `- **Reserva e caixa:** ${formatCurrency(liquidez)} por mês até formar entre **${formatCurrency(reservaMin)}** e **${formatCurrency(reservaMax)}**.`,
+          `- **Base estável:** ${formatCurrency(Math.round(baseInvest * 0.5))} por mês em Tesouro Selic, CDBs fortes ou renda fixa equivalente.`,
+          `- **Crescimento:** ${formatCurrency(Math.round(baseInvest * 0.5))} por mês em ETFs, ações amplamente diversificadas ou fundos de índice.`
+        ]
+      : perfil === "moderado"
+        ? [
+            `- **Reserva e caixa:** ${formatCurrency(liquidez)} por mês até formar entre **${formatCurrency(reservaMin)}** e **${formatCurrency(reservaMax)}**.`,
+            `- **Base estável:** ${formatCurrency(Math.round(baseInvest * 0.6))} por mês em Tesouro Selic, CDBs fortes, LCIs/LCAs ou Tesouro IPCA para prazo longo.`,
+            `- **Crescimento gradual:** ${formatCurrency(Math.round(baseInvest * 0.4))} por mês em ETFs ou ações de qualidade com diversificação.`
+          ]
+        : [
+            `- **Reserva e caixa:** ${formatCurrency(liquidez)} por mês até formar entre **${formatCurrency(reservaMin)}** e **${formatCurrency(reservaMax)}**.`,
+            `- **Carteira principal:** ${formatCurrency(baseInvest)} por mês em renda fixa conservadora, com liquidez e previsibilidade.`
+          ];
+
+    return [
+      `Com renda de **${formatCurrency(rendaInvest)}** e gastos de **${formatCurrency(gastosInvest)}**, seu saldo disponível hoje é de **${formatCurrency(saldo)} por mês**.`,
+      objetivo
+        ? `Seu objetivo principal é **${objetivo}** e seu horizonte é **${prazoTexto}**, então a estratégia deve priorizar construção de patrimônio com consistência.`
+        : `Como seu horizonte é **${prazoTexto}**, a estratégia deve priorizar construção de patrimônio com consistência.`,
+      "",
+      "### Plano sugerido",
+      ...allocation,
+      "",
+      "### Ordem prática",
+      "1. Monte a reserva de emergência primeiro.",
+      "2. Automatize o investimento todo mês logo após receber.",
+      "3. Só aumente risco depois que a reserva estiver pronta.",
+      "4. Revise a carteira a cada 6 a 12 meses, não toda semana.",
+      "",
+      `Se quiser, eu posso montar agora uma **carteira mensal exata para esses ${formatCurrency(saldo)}**, separando quanto vai para reserva, renda fixa e crescimento.`
+    ].join("\n");
   }
 
   if (normalized.includes("comprar ou alugar") || normalized.includes("alugar ou comprar")) {
@@ -1801,6 +1890,55 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
   if (err instanceof SyntaxError && err.status === 400 && "body" in err) {
     return res.status(400).json({ error: "JSON invalido." });
+  }
+
+  if ((normalized.includes("investir") || normalized.includes("investimento") || normalized.includes("independencia financeira") || normalized.includes("independência financeira")) && (profile.renda || profile.gastos)) {
+    const renda = profile.renda || 0;
+    const gastos = profile.gastos || 0;
+    const saldo = Math.max(0, renda - gastos);
+    const prazoLongo = /a vida|longo prazo|10\s*anos|20\s*anos|30\s*anos/i.test(String(profile.prazo || text));
+    const perfil = profile.perfil || (prazoLongo ? "moderado" : "conservador");
+    const reservaMin = gastos > 0 ? gastos * 6 : 0;
+    const reservaMax = gastos > 0 ? gastos * 12 : 0;
+    const baseInvest = saldo > 0 ? Math.round(saldo * 0.7) : 0;
+    const liquidez = saldo > 0 ? Math.round(saldo * 0.3) : 0;
+
+    const allocation = perfil === "arrojado"
+      ? [
+          `- **Reserva e caixa:** ${formatCurrency(liquidez)} por mês até formar entre **${formatCurrency(reservaMin)}** e **${formatCurrency(reservaMax)}** em liquidez diária.`,
+          `- **Núcleo de longo prazo:** ${formatCurrency(Math.round(baseInvest * 0.5))} por mês em renda fixa de qualidade e títulos públicos.`,
+          `- **Crescimento:** ${formatCurrency(Math.round(baseInvest * 0.5))} por mês em ativos de maior risco, como ETFs de ações ou fundos bem diversificados.`
+        ]
+      : perfil === "moderado"
+        ? [
+            `- **Reserva e caixa:** ${formatCurrency(liquidez)} por mês até formar entre **${formatCurrency(reservaMin)}** e **${formatCurrency(reservaMax)}** em liquidez diária.`,
+            `- **Base estável:** ${formatCurrency(Math.round(baseInvest * 0.6))} por mês em Tesouro Selic, CDBs fortes, LCIs/LCAs ou Tesouro IPCA para objetivos longos.`,
+            `- **Crescimento gradual:** ${formatCurrency(Math.round(baseInvest * 0.4))} por mês em ETFs, fundos de índice ou ações de qualidade, com diversificação.`
+          ]
+        : [
+            `- **Reserva e caixa:** ${formatCurrency(liquidez)} por mês até formar entre **${formatCurrency(reservaMin)}** e **${formatCurrency(reservaMax)}** em liquidez diária.`,
+            `- **Carteira principal:** ${formatCurrency(baseInvest)} por mês em renda fixa conservadora, priorizando liquidez, previsibilidade e baixo risco.`
+          ];
+
+    const objectiveLine = profile.objetivo
+      ? `Seu objetivo principal é **${profile.objetivo}**, então o foco deve ser construir patrimônio consistente antes de buscar retornos mais agressivos.`
+      : "Seu foco deve ser construir patrimônio consistente e sustentável, sem depender de retornos rápidos.";
+
+    return [
+      `Com renda de **${formatCurrency(renda)}** e gastos de **${formatCurrency(gastos)}**, seu saldo disponível hoje é de **${formatCurrency(saldo)} por mês**.`,
+      objectiveLine,
+      "",
+      "### Plano sugerido",
+      allocation.join("\n"),
+      "",
+      "### Ordem prática",
+      "1. Organize uma reserva de emergência primeiro.",
+      "2. Automatize o investimento no dia em que receber.",
+      "3. Só aumente risco depois de consolidar reserva e disciplina.",
+      "4. Revise a carteira a cada 6 a 12 meses, não toda semana.",
+      "",
+      `Se quiser, no próximo passo eu posso montar uma **carteira mensal exata para esses ${formatCurrency(saldo)}**, separando quanto iria para reserva, renda fixa e crescimento.`
+    ].join("\n");
   }
 
   console.error(`[${now()}] Erro interno nao tratado:`, err?.message || "Erro desconhecido");
