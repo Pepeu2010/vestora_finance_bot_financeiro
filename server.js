@@ -130,7 +130,8 @@ app.use(helmet({
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
       frameAncestors: ["'none'"],
-      formAction: ["'self'"]
+      formAction: ["'self'"],
+      ...(IS_PRODUCTION ? { upgradeInsecureRequests: [] } : {})
     }
   },
   crossOriginEmbedderPolicy: false,
@@ -145,13 +146,6 @@ app.use(helmet({
     }
   }
 }));
-
-if (IS_PRODUCTION) {
-  app.use((req, res, next) => {
-    res.setHeader("Content-Security-Policy", "upgrade-insecure-requests");
-    next();
-  });
-}
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -408,6 +402,38 @@ async function requireAuth(req, res, next) {
   return next();
 }
 
+async function requireChatAccess(req, res, next) {
+  const user = getAuthUser(req);
+
+  if (user) {
+    if (isSupabaseConfigured) {
+      const { data } = await supabase
+        .from("app_users")
+        .select("id")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      const profile = data ? null : await getSupabaseProfile(user.id);
+
+      if (!data && !profile) {
+        res.clearCookie(SESSION_COOKIE_NAME);
+        return res.status(401).json({ error: "Sessao expirada. Faca login novamente." });
+      }
+    }
+
+    req.user = user;
+    return next();
+  }
+
+  const deviceId = validateDeviceId(req.body?.deviceId || req.body?.sessionId);
+  if (!deviceId) {
+    return res.status(401).json({ error: "Sessao invalida. Entre novamente para continuar." });
+  }
+
+  req.user = { id: deviceId, email: null, name: "Anonimo", isAnonymous: true };
+  return next();
+}
+
 function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
 }
@@ -460,13 +486,23 @@ function extractDomain(url) {
 function normalizeSourceItem(source) {
   if (!source || typeof source !== "object") return null;
 
-  const url = String(source.url || source.link || "").trim();
-  if (!url) return null;
+  const rawUrl = String(source.url || source.link || "").trim();
+  if (!rawUrl) return null;
+
+  let safeUrl = "";
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      safeUrl = parsed.toString();
+    }
+  } catch {}
+
+  if (!safeUrl) return null;
 
   return {
-    title: String(source.title || source.name || extractDomain(url) || "Fonte").trim(),
-    url,
-    domain: extractDomain(url)
+    title: String(source.title || source.name || extractDomain(safeUrl) || "Fonte").trim(),
+    url: safeUrl,
+    domain: extractDomain(safeUrl)
   };
 }
 
@@ -972,8 +1008,8 @@ function cleanOldFailedLogins() {
   }
 }
 
-setInterval(cleanOldSessions, 1000 * 60 * 30);
-setInterval(cleanOldFailedLogins, 1000 * 60 * 15);
+setInterval(cleanOldSessions, 1000 * 60 * 30).unref();
+setInterval(cleanOldFailedLogins, 1000 * 60 * 15).unref();
 
 app.get("/api/health", (req, res) => {
   res.json({
@@ -1499,24 +1535,32 @@ async function prepareChatRequest(req, res) {
     return null;
   }
 
-  const conversationId = await ensureConversation({
-    conversationId: conversationIdFromRequest,
-    userId: req.user.id,
-    firstMessage: userMessage
-  });
+  const isAnonymous = req.user.isAnonymous === true;
+  let conversationId;
 
-  const cloudHistory = await getConversationMessages({
-    conversationId,
-    userId: req.user.id
-  });
+  if (isAnonymous) {
+    conversationId = conversationIdFromRequest || createSessionId();
+  } else {
+    conversationId = await ensureConversation({
+      conversationId: conversationIdFromRequest,
+      userId: req.user.id,
+      firstMessage: userMessage
+    });
+  }
+
+  const cloudHistory = (!isAnonymous && isSupabaseConfigured)
+    ? await getConversationMessages({ conversationId, userId: req.user.id })
+    : [];
 
   const historyForGroq = (userSettings.referenciarHistorico !== false)
-    ? (isSupabaseConfigured
+    ? (cloudHistory.length > 0
         ? cloudHistory.slice(-MAX_HISTORY_MESSAGES)
         : session.history.slice(-MAX_HISTORY_MESSAGES))
     : [];
 
-  await saveCloudMessage({ conversationId, role: "user", content: userMessage });
+  if (!isAnonymous) {
+    await saveCloudMessage({ conversationId, role: "user", content: userMessage });
+  }
 
   const freshness = classifyFreshnessNeed(userMessage);
   const mustUseWebSearch = shouldPesquisarInternet(userMessage);
@@ -1578,12 +1622,14 @@ async function prepareChatRequest(req, res) {
 /**
  * Non-streaming chat endpoint (original behavior).
  */
-app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
+app.post("/api/chat", requireChatAccess, chatLimiter, async (req, res) => {
   try {
     const prepared = await prepareChatRequest(req, res);
     if (!prepared) return;
 
     const { session, conversationId, userMessage, userSettings, historyForGroq, officialFacts, enrichedInternetResults, userPreferences, responseMeta } = prepared;
+
+    const isAnon = req.user.isAnonymous === true;
 
     // Try quick calculator first
     if (userSettings.respostasRapidas !== false) {
@@ -1592,7 +1638,9 @@ app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
         const safeAnswer = finalizeAnswer(quickAnswer);
         addToHistory(session, "user", userMessage);
         addToHistory(session, "model", safeAnswer);
-        await saveCloudMessage({ conversationId, role: "model", content: safeAnswer });
+        if (!isAnon) {
+          await saveCloudMessage({ conversationId, role: "model", content: safeAnswer });
+        }
         console.log(`[${now()}] [${session.id}] Resposta por calculadora simples.`);
 
         return res.json({ sessionId: session.id, conversationId, answer: safeAnswer, ...responseMeta });
@@ -1610,7 +1658,9 @@ app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
 
     addToHistory(session, "user", userMessage);
     addToHistory(session, "model", answer);
-    await saveCloudMessage({ conversationId, role: "model", content: answer });
+    if (!isAnon) {
+      await saveCloudMessage({ conversationId, role: "model", content: answer });
+    }
     console.log(`[${now()}] [${session.id}] Resposta enviada.`);
 
     res.json({ sessionId: session.id, conversationId, answer, ...responseMeta });
@@ -1623,7 +1673,7 @@ app.post("/api/chat", requireAuth, chatLimiter, async (req, res) => {
 /**
  * Streaming chat endpoint â€” returns Server-Sent Events.
  */
-app.post("/api/chat/stream", requireAuth, chatLimiter, async (req, res) => {
+app.post("/api/chat/stream", requireChatAccess, chatLimiter, async (req, res) => {
   try {
     const prepared = await prepareChatRequest(req, res);
     if (!prepared) return;
@@ -1688,11 +1738,14 @@ app.post("/api/chat/stream", requireAuth, chatLimiter, async (req, res) => {
     }
 
     const fullAnswer = finalizeAnswer(rawAnswer);
+    const isAnonStream = req.user.isAnonymous === true;
 
     // Save complete answer to DB and history
     addToHistory(session, "user", userMessage);
     addToHistory(session, "model", fullAnswer);
-    await saveCloudMessage({ conversationId, role: "model", content: fullAnswer });
+    if (!isAnonStream) {
+      await saveCloudMessage({ conversationId, role: "model", content: fullAnswer });
+    }
     console.log(`[${now()}] [${session.id}] Resposta stream enviada.`);
 
     // Signal completion
@@ -1724,6 +1777,19 @@ app.use((req, res) => {
   }
 
   res.status(500).send("Interface nao compilada. Execute npm run build antes de iniciar.");
+});
+
+app.use((err, req, res, next) => {
+  if (err instanceof SyntaxError && err.status === 400 && "body" in err) {
+    return res.status(400).json({ error: "JSON invalido." });
+  }
+
+  console.error(`[${now()}] Erro interno nao tratado:`, err?.message || "Erro desconhecido");
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  return res.status(500).json({ error: "Erro interno do servidor." });
 });
 
 if (require.main === module) {

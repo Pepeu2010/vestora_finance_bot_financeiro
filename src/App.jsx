@@ -23,6 +23,27 @@ const CHAT_FALLBACK_MESSAGE = "Tive um problema ao gerar a resposta agora. Tente
 const BRAND_ASSET_VERSION = 42;
 const FILE_ATTACHMENTS_INPUT_ID = "fileUploadInput";
 const MIN_LOADING_FEEDBACK_MS = 250;
+const PERSISTED_SETTINGS_KEYS = [
+  "estiloTom",
+  "acolhedor",
+  "entusiasmado",
+  "listasCabecalhos",
+  "emoji",
+  "respostasRapidas",
+  "referenciarMemorias",
+  "referenciarHistorico",
+  "buscaNaWeb",
+  "lousa",
+  "buscaConector",
+  "alertasMercado",
+  "resumoDiario",
+  "alertasPrecos",
+  "noticiasFinanceiras",
+  "lembretesMetas",
+  "frequenciaResumo",
+  "idioma",
+  "tema"
+];
 
 const QUICK_PROMPTS = [
   {
@@ -127,7 +148,12 @@ function getOrCreateDeviceId() {
 
 function loadLocalSettings() {
   try {
-    const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+    const raw = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+    const saved = Object.fromEntries(
+      PERSISTED_SETTINGS_KEYS
+        .filter((key) => Object.prototype.hasOwnProperty.call(raw, key))
+        .map((key) => [key, raw[key]])
+    );
     return {
       estiloTom: "padrao",
       acolhedor: "padrao",
@@ -184,7 +210,10 @@ function loadLocalSettings() {
 }
 
 function saveLocalSettings(settings) {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  const persisted = Object.fromEntries(
+    PERSISTED_SETTINGS_KEYS.map((key) => [key, settings[key]])
+  );
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(persisted));
 }
 
 function isLocalHost() {
@@ -546,7 +575,8 @@ function MessageSources({ sources }) {
       <p className="message-sources-title">Fontes</p>
       <ul className="message-sources-list">
         {items.map((source, index) => {
-          const safeHref = source.url;
+          const safeHref = safeExternalHref(source.url);
+          if (!safeHref) return null;
           const domain = source.domain || safeHref.replace(/^https?:\/\//, "").split("/")[0];
           const shortDomain = domain.replace(/^www\./, "");
           const label = source.title || shortDomain;
@@ -1470,7 +1500,8 @@ export default function App() {
       const data = await response.json();
 
       if (!data.authenticated) {
-        showAuth();
+        setCurrentUser(null);
+        setCloudEnabled(false);
         return false;
       }
 
@@ -1478,7 +1509,8 @@ export default function App() {
       hideAuth();
       return true;
     } catch {
-      showAuth();
+      setCurrentUser(null);
+      setCloudEnabled(false);
       return false;
     }
   }
@@ -1525,6 +1557,8 @@ export default function App() {
       const response = await fetch("/api/conversations");
 
       if (response.status === 401) {
+        setCurrentUser(null);
+        setCloudEnabled(false);
         showAuth();
         return;
       }
@@ -1853,10 +1887,11 @@ export default function App() {
     setAccountMenuOpen(false);
     setIsSidebarOpen(false);
     setCurrentUser(null);
+    setCloudEnabled(false);
     setCurrentConversationId("");
     localStorage.removeItem(CURRENT_CONVERSATION_KEY);
     persistConversations([]);
-    showAuth();
+    hideAuth();
   }
 
   function handleNewChat() {

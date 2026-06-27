@@ -1,3 +1,4 @@
+const net = require("node:net");
 const { normalizeText } = require("./utils");
 
 const SEARCH_TIMEOUT_MS = Number(process.env.WEB_SEARCH_TIMEOUT_MS || 12000);
@@ -125,17 +126,60 @@ function cleanSearchUrl(rawUrl) {
   try {
     const url = new URL(value, "https://duckduckgo.com");
     const redirected = url.searchParams.get("uddg");
-    if (redirected) return decodeURIComponent(redirected);
+    if (redirected) {
+      const decoded = decodeURIComponent(redirected);
+      const parsedRedirect = new URL(decoded);
+      if (parsedRedirect.protocol === "http:" || parsedRedirect.protocol === "https:") {
+        return parsedRedirect.toString();
+      }
+      return "";
+    }
 
     if (url.hostname.includes("bing.com") && url.pathname.includes("/ck/")) {
       const target = decodeBingTarget(url.searchParams.get("u"));
       if (target) return target;
     }
 
-    return url.href;
+    if (url.protocol === "http:" || url.protocol === "https:") {
+      return url.href;
+    }
+
+    return "";
   } catch {
-    return value;
+    return "";
   }
+}
+
+function isBlockedIpAddress(hostname) {
+  const normalized = String(hostname || "").trim().replace(/^\[/, "").replace(/\]$/, "").split("%")[0];
+  const version = net.isIP(normalized);
+  if (!version) return false;
+
+  if (version === 4) {
+    return (
+      normalized === "0.0.0.0" ||
+      normalized === "127.0.0.1" ||
+      normalized === "169.254.169.254" ||
+      /^10\./.test(normalized) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(normalized) ||
+      /^192\.168\./.test(normalized) ||
+      /^169\.254\./.test(normalized)
+    );
+  }
+
+  const compact = normalized.toLowerCase();
+  return (
+    compact === "::1" ||
+    compact.startsWith("fc") ||
+    compact.startsWith("fd") ||
+    compact.startsWith("fe8") ||
+    compact.startsWith("fe9") ||
+    compact.startsWith("fea") ||
+    compact.startsWith("feb") ||
+    compact.startsWith("::ffff:127.") ||
+    compact.startsWith("::ffff:10.") ||
+    compact.startsWith("::ffff:192.168.")
+  );
 }
 
 function getHostname(url) {
@@ -656,6 +700,7 @@ function isUrlSafeForFetch(url) {
     const hostname = parsed.hostname.toLowerCase();
 
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+    if (parsed.username || parsed.password) return false;
 
     const blockedHosts = [
       "localhost", "127.0.0.1", "::1", "[::1]",
@@ -664,6 +709,7 @@ function isUrlSafeForFetch(url) {
     ];
 
     if (blockedHosts.includes(hostname)) return false;
+    if (isBlockedIpAddress(hostname)) return false;
 
     if (/^10\./.test(hostname) || /^172\.(1[6-9]|2\d|3[01])\./.test(hostname) || /^192\.168\./.test(hostname)) {
       return false;
