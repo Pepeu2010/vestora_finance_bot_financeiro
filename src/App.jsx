@@ -685,8 +685,8 @@ function QuickActions({ actions, onSend, compact = false, disabled = false }) {
 function BrandLockup({
   className = "",
   variant = "full",
-  subtitle = "Inteligência financeira pessoal",
-  subtitleAccent = "pessoal"
+  subtitle = "Assistência inteligente para decisões do dia a dia",
+  subtitleAccent = "inteligente"
 }) {
   const isCompact = variant === "compact";
   const subtitleParts = String(subtitle).split(subtitleAccent);
@@ -749,7 +749,7 @@ function StartScreen({ userName, onPrompt, onSend }) {
       <div className="start-hero" data-reveal>
         <BrandLockup className="start-brand-lockup" />
         <h2>Olá, {userName} 👋</h2>
-        <p>Como posso ajudar sua vida financeira hoje?</p>
+        <p>Como posso ajudar hoje?</p>
 
         <div className="start-prompts" aria-label="Sugestões de conversa">
           {QUICK_PROMPTS.map((item) => (
@@ -843,7 +843,7 @@ const TRANSLATIONS = {
     online: "Online",
     offline: "Offline",
     typing: "Digitando...",
-    composerPlaceholder: "Digite sua pergunta financeira...",
+    composerPlaceholder: "Digite sua pergunta...",
     activeIa: "IA ativa",
     waitAnswer: "Aguardando resposta",
     sendMessage: "Enviar mensagem",
@@ -1716,6 +1716,44 @@ export default function App() {
 
       setStatusText("Digitando...");
 
+      const applyStreamEvent = (event) => {
+        if (event.type === "sources") {
+          streamSources = event.sources || [];
+          updateConversation(activeConversationId, (conversation) => ({
+            messages: conversation.messages.map((message) =>
+              message.id === botMsgId ? { ...message, sources: streamSources } : message
+            )
+          }));
+        } else if (event.type === "meta") {
+          streamSources = event.sources || streamSources;
+        } else if (event.type === "chunk") {
+          streamText += event.text;
+          updateConversation(activeConversationId, (conversation) => ({
+            messages: conversation.messages.map((message) =>
+              message.id === botMsgId ? { ...message, text: streamText } : message
+            )
+          }));
+        } else if (event.type === "done") {
+          finalConversationId = event.conversationId || activeConversationId;
+        } else if (event.type === "error") {
+          console.error("Falha no stream da IA:", event.error);
+          throw new Error("stream-error");
+        }
+      };
+
+      const processSseLine = (line) => {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith("data:")) return;
+
+        try {
+          const event = JSON.parse(trimmed.slice(5).trim());
+          applyStreamEvent(event);
+        } catch (parseErr) {
+          if (parseErr.name === "AbortError") throw parseErr;
+          if (parseErr.message && !parseErr.message.includes("JSON")) throw parseErr;
+        }
+      };
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -1725,39 +1763,12 @@ export default function App() {
         buffer = lines.pop() || "";
 
         for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed || !trimmed.startsWith("data:")) continue;
-
-          try {
-            const event = JSON.parse(trimmed.slice(5).trim());
-
-            if (event.type === "sources") {
-              streamSources = event.sources || [];
-              updateConversation(activeConversationId, (conversation) => ({
-                messages: conversation.messages.map((message) =>
-                  message.id === botMsgId ? { ...message, sources: streamSources } : message
-                )
-              }));
-            } else if (event.type === "meta") {
-              streamSources = event.sources || streamSources;
-            } else if (event.type === "chunk") {
-              streamText += event.text;
-              updateConversation(activeConversationId, (conversation) => ({
-                messages: conversation.messages.map((message) =>
-                  message.id === botMsgId ? { ...message, text: streamText } : message
-                )
-              }));
-            } else if (event.type === "done") {
-              finalConversationId = event.conversationId || activeConversationId;
-            } else if (event.type === "error") {
-              console.error("Falha no stream da IA:", event.error);
-              throw new Error("stream-error");
-            }
-          } catch (parseErr) {
-            if (parseErr.name === "AbortError") throw parseErr;
-            if (parseErr.message && !parseErr.message.includes("JSON")) throw parseErr;
-          }
+          processSseLine(line);
         }
+      }
+
+      if (buffer.trim()) {
+        processSseLine(buffer);
       }
 
       // Handle conversation ID change

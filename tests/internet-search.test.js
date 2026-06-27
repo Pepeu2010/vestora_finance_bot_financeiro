@@ -64,6 +64,18 @@ test("nao dispara busca para pergunta explicativa estavel", () => {
   }
 });
 
+test("mantem pergunta geral atemporal fora do fluxo de busca financeira", () => {
+  const { classifyFreshnessNeed, shouldPesquisarInternet, restore } = loadSearchModule();
+  try {
+    const classification = classifyFreshnessNeed("Como funciona um supermercado?");
+    assert.equal(classification.shouldSearch, false);
+    assert.equal(classification.category, "educational");
+    assert.equal(shouldPesquisarInternet("Como funciona um supermercado?"), false);
+  } finally {
+    restore();
+  }
+});
+
 test("usa cache de 15 minutos para evitar pesquisa repetida em curto periodo", async () => {
   const { pesquisarInternet, clearSearchCaches, restore } = loadSearchModule();
   clearSearchCaches();

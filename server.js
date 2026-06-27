@@ -1687,7 +1687,9 @@ app.post("/api/chat/stream", requireChatAccess, chatLimiter, async (req, res) =>
         const safeAnswer = finalizeAnswer(quickAnswer);
         addToHistory(session, "user", userMessage);
         addToHistory(session, "model", safeAnswer);
-        await saveCloudMessage({ conversationId, role: "model", content: safeAnswer });
+        if (!req.user.isAnonymous) {
+          await saveCloudMessage({ conversationId, role: "model", content: safeAnswer });
+        }
         console.log(`[${now()}] [${session.id}] Resposta por calculadora simples (stream).`);
 
         // Send as a single chunk
@@ -1737,7 +1739,24 @@ app.post("/api/chat/stream", requireChatAccess, chatLimiter, async (req, res) =>
       }
     }
 
-    const fullAnswer = finalizeAnswer(rawAnswer);
+    let fullAnswer = finalizeAnswer(rawAnswer);
+    if (!sanitizeModelAnswer(rawAnswer)) {
+      const fallbackAnswer = await askGroq({
+        message: userMessage,
+        history: historyForGroq,
+        profileSummary: userSettings.referenciarMemorias !== false ? getProfileSummary(session) : "",
+        userPreferences,
+        officialFacts,
+        internetResults: enrichedInternetResults
+      });
+
+      fullAnswer = finalizeAnswer(fallbackAnswer);
+      const delta = fullAnswer.slice(emittedLength);
+      emittedLength = fullAnswer.length;
+      if (delta) {
+        res.write(`data: ${JSON.stringify({ type: "chunk", text: delta })}\n\n`);
+      }
+    }
     const isAnonStream = req.user.isAnonymous === true;
 
     // Save complete answer to DB and history

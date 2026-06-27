@@ -463,7 +463,7 @@ function buildSearchQueries(message, classification) {
     .replace(/\s+/g, " ")
     .trim();
 
-  if (!clean) return ["educacao financeira brasil"];
+  if (!clean) return ["assistente virtual brasil"];
 
   const normalized = normalizeText(clean);
   const queries = [clean];
@@ -492,6 +492,9 @@ function buildSearchQueries(message, classification) {
   } else if (classification.category === "current-affairs") {
     queries.push(`${clean} gov br`);
     queries.push(`${clean} wikipedia`);
+  } else if (classification.category === "general-fresh") {
+    queries.push(`${clean} fonte oficial`);
+    queries.push(`${clean} contexto atualizado`);
   } else if (classification.category === "rules") {
     queries.push(`${clean} gov br`);
     queries.push(`${clean} site oficial`);
