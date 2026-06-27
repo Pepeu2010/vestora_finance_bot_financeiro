@@ -1,6 +1,6 @@
-const CACHE_NAME = "vestora-v41";
-const STATIC_CACHE = "vestora-static-v41";
-const DYNAMIC_CACHE = "vestora-dynamic-v41";
+const CACHE_NAME = "vestora-v42";
+const STATIC_CACHE = "vestora-static-v42";
+const DYNAMIC_CACHE = "vestora-dynamic-v42";
 
 const STATIC_ASSETS = [
   "/",
@@ -52,7 +52,6 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (url.pathname.startsWith("/api/")) {
-    event.respondWith(networkFirst(request, DYNAMIC_CACHE));
     return;
   }
 

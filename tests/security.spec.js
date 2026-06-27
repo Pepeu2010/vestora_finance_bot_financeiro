@@ -1,58 +1,96 @@
 // @ts-check
 const { test, expect } = require("@playwright/test");
 
-test.describe("Segurança - Simulação de DDoS", () => {
-  test("requisições POST sem auth retornam 401 ou 429", async ({ request }) => {
+async function createAuthenticatedContext(playwright, baseURL) {
+  const request = await playwright.request.newContext({ baseURL });
+  const unique = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const response = await request.post("/api/auth/register", {
+    data: {
+      name: "Teste Seguranca",
+      email: `seguranca-${unique}@vestora.local`,
+      password: "Senha-segura-123!"
+    }
+  });
+
+  if (response.status() === 503) {
+    test.skip(true, "Supabase nao configurado neste ambiente.");
+  }
+
+  expect(response.ok()).toBeTruthy();
+  const setCookie = response.headers()["set-cookie"] || "";
+  const csrfMatch = setCookie.match(/vestora_csrf=([^;]+)/);
+  expect(csrfMatch).toBeTruthy();
+
+  return {
+    request,
+    csrfToken: decodeURIComponent(csrfMatch[1])
+  };
+}
+
+let authenticatedRequest = null;
+let authenticatedCsrfToken = "";
+
+test.beforeAll(async ({ playwright, baseURL }) => {
+  const auth = await createAuthenticatedContext(playwright, baseURL);
+  authenticatedRequest = auth.request;
+  authenticatedCsrfToken = auth.csrfToken;
+});
+
+test.afterAll(async () => {
+  await authenticatedRequest?.dispose();
+});
+
+test.describe("Seguranca - DDoS", () => {
+  test("POST sem auth retorna 401 ou 429", async ({ request }) => {
     const responses = [];
     for (let i = 0; i < 20; i++) {
       responses.push(request.post("/api/chat", { data: { message: `teste ${i}` } }));
     }
     const results = await Promise.all(responses);
-    const blocked = results.filter((r) => r.status() === 401 || r.status() === 429);
+    const blocked = results.filter((response) => response.status() === 401 || response.status() === 429);
     expect(blocked.length).toBe(results.length);
   });
 
-  test("rate limit bloqueia requisições excessivas em endpoints autenticados", async ({ request }) => {
+  test("rate limit bloqueia excesso em endpoints autenticados", async ({ request }) => {
     const responses = [];
     for (let i = 0; i < 25; i++) {
       responses.push(request.get("/api/conversations"));
     }
     const results = await Promise.all(responses);
-    const blocked = results.filter((r) => r.status() === 401 || r.status() === 429);
+    const blocked = results.filter((response) => response.status() === 401 || response.status() === 429);
     expect(blocked.length).toBe(results.length);
   });
 
-  test("requisições concorrentes não derrubam o servidor", async ({ request }) => {
+  test("requisicoes concorrentes nao derrubam o servidor", async ({ request }) => {
     const responses = [];
     for (let i = 0; i < 15; i++) {
       responses.push(request.get("/api/health"));
     }
     const results = await Promise.all(responses);
-    const ok = results.filter((r) => r.status() === 200);
+    const ok = results.filter((response) => response.status() === 200);
     expect(ok.length).toBeGreaterThan(0);
   });
 });
 
-test.describe("Segurança - XSS (Cross-Site Scripting)", () => {
+test.describe("Seguranca - XSS", () => {
   test("payload XSS no chat retorna erro seguro ou resposta sanitizada", async ({ request }) => {
-    const xssPayloads = [
+    const payloads = [
       '<script>alert("xss")</script>',
-      '<img src=x onerror=alert(1)>',
+      "<img src=x onerror=alert(1)>",
       '"><script>document.cookie</script>',
       "javascript:alert(1)",
-      '<svg onload=alert(1)>',
+      "<svg onload=alert(1)>"
     ];
 
-    for (const payload of xssPayloads) {
+    for (const payload of payloads) {
       const response = await request.post("/api/chat", {
         data: { message: payload }
       });
 
       if (response.status() === 429) continue;
-      const status = response.status();
-      expect([200, 401]).toContain(status);
+      expect([200, 401]).toContain(response.status());
 
-      if (status === 200) {
+      if (response.status() === 200) {
         const body = await response.json();
         expect(body.answer).toBeDefined();
         expect(body.answer.toLowerCase()).not.toContain("<script>");
@@ -61,10 +99,9 @@ test.describe("Segurança - XSS (Cross-Site Scripting)", () => {
     }
   });
 
-  test("headers CSP previnem execução de scripts", async ({ request }) => {
+  test("headers CSP previnem execucao de scripts", async ({ request }) => {
     const response = await request.get("/");
-    const headers = response.headers();
-    const csp = headers["content-security-policy"];
+    const csp = response.headers()["content-security-policy"];
     expect(csp).toBeDefined();
     expect(csp).toContain("default-src");
     expect(csp).toContain("script-src 'self'");
@@ -73,8 +110,8 @@ test.describe("Segurança - XSS (Cross-Site Scripting)", () => {
   });
 });
 
-test.describe("Segurança - Brute Force no Login", () => {
-  test("múltiplas tentativas de login com senha errada recebem 401", async ({ request }) => {
+test.describe("Seguranca - Brute Force no Login", () => {
+  test("multiplas tentativas de login com senha errada recebem 401", async ({ request }) => {
     const attempts = [];
     for (let i = 0; i < 10; i++) {
       attempts.push(
@@ -83,12 +120,13 @@ test.describe("Segurança - Brute Force no Login", () => {
         })
       );
     }
+
     const results = await Promise.all(attempts);
-    const failed = results.filter((r) => r.status() === 401 || r.status() === 429);
+    const failed = results.filter((response) => response.status() === 401 || response.status() === 429);
     expect(failed.length).toBeGreaterThan(0);
   });
 
-  test("login com email inválido retorna erro apropriado", async ({ request }) => {
+  test("login com email invalido retorna erro apropriado", async ({ request }) => {
     const response = await request.post("/api/auth/login", {
       data: { email: "naoexiste@fake.com", password: "qualquer123" }
     });
@@ -96,13 +134,13 @@ test.describe("Segurança - Brute Force no Login", () => {
   });
 });
 
-test.describe("Segurança - Headers de Segurança", () => {
-  test("x-powered-by não é exposto", async ({ request }) => {
+test.describe("Seguranca - Headers", () => {
+  test("x-powered-by nao e exposto", async ({ request }) => {
     const response = await request.get("/api/health");
     expect(response.headers()["x-powered-by"]).toBeUndefined();
   });
 
-  test("x-content-type-options é nosniff", async ({ request }) => {
+  test("x-content-type-options e nosniff", async ({ request }) => {
     const response = await request.get("/api/health");
     expect(response.headers()["x-content-type-options"]).toBe("nosniff");
   });
@@ -127,8 +165,8 @@ test.describe("Segurança - Headers de Segurança", () => {
   });
 });
 
-test.describe("Segurança - Autenticação e Sessão", () => {
-  test("cookie de sessão tem flags de segurança", async ({ request }) => {
+test.describe("Seguranca - Autenticacao e Sessao", () => {
+  test("cookie de sessao tem flags de seguranca", async ({ request }) => {
     const response = await request.post("/api/auth/login", {
       data: { email: "test@test.com", password: "senha123" }
     });
@@ -143,35 +181,35 @@ test.describe("Segurança - Autenticação e Sessão", () => {
     expect([401, 429]).toContain(response.status());
   });
 
-  test("com cookie inválido, endpoint retorna 401", async ({ request }) => {
+  test("com cookie invalido, endpoint retorna 401", async ({ request }) => {
     const response = await request.get("/api/conversations", {
       headers: { Cookie: "vestora_session=invalid.token.here" }
     });
     expect([401, 403, 429]).toContain(response.status());
   });
 
-  test("registro com dados inválidos é rejeitado", async ({ request }) => {
-    const tests = [
+  test("registro com dados invalidos e rejeitado", async ({ request }) => {
+    const attempts = [
       { name: "", email: "a@b.com", password: "12345" },
       { name: "Test", email: "", password: "12345" },
       { name: "Test", email: "invalido", password: "12345" },
       { name: "Test", email: "a@b.com", password: "123" }
     ];
 
-    for (const data of tests) {
+    for (const data of attempts) {
       const response = await request.post("/api/auth/register", { data });
       expect([400, 429]).toContain(response.status());
     }
   });
 });
 
-test.describe("Segurança - Injeção e Manipulação", () => {
-  test("SQL injection no login não causa erro de servidor", async ({ request }) => {
+test.describe("Seguranca - Injecao e Manipulacao", () => {
+  test("SQL injection no login nao causa erro de servidor", async ({ request }) => {
     const payloads = [
       "' OR '1'='1",
       "admin'--",
       "1; DROP TABLE users",
-      "' UNION SELECT * FROM app_users--",
+      "' UNION SELECT * FROM app_users--"
     ];
 
     for (const payload of payloads) {
@@ -182,7 +220,7 @@ test.describe("Segurança - Injeção e Manipulação", () => {
     }
   });
 
-  test("body com JSON inválido é rejeitado", async ({ request }) => {
+  test("body com JSON invalido e rejeitado", async ({ request }) => {
     const response = await request.post("/api/chat", {
       headers: { "Content-Type": "application/json" },
       data: "not json"
@@ -190,42 +228,38 @@ test.describe("Segurança - Injeção e Manipulação", () => {
     expect([400, 415, 429]).toContain(response.status());
   });
 
-  test("payload excessivamente grande é rejeitado", async ({ request }) => {
-    const bigPayload = { message: "a".repeat(100000) };
+  test("payload excessivamente grande e rejeitado", async ({ request }) => {
     const response = await request.post("/api/chat", {
-      data: bigPayload
+      data: { message: "a".repeat(100000) }
     });
     expect([400, 413, 429]).toContain(response.status());
   });
 
-  test("manipulação de conversationId path traversal não expõe dados", async ({ request }) => {
-    const response = await request.get(
-      "/api/conversations/../../../etc/passwd/messages"
-    );
-    const status = response.status();
-    expect([400, 401, 404, 429, 200]).toContain(status);
+  test("manipulacao de conversationId path traversal nao expoe dados", async ({ request }) => {
+    const response = await request.get("/api/conversations/../../../etc/passwd/messages");
+    expect([400, 401, 404, 429, 200]).toContain(response.status());
+
     const body = await response.text();
     expect(body).not.toContain("root:");
     expect(body).not.toContain("/bin/bash");
   });
 });
 
-test.describe("Segurança - Endpoint Exposure", () => {
-  test("arquivos sensíveis não retornam conteúdo real via HTTP", async ({ request }) => {
+test.describe("Seguranca - Endpoint Exposure", () => {
+  test("arquivos sensiveis nao retornam conteudo real via HTTP", async ({ request }) => {
     const sensitiveFiles = [
       "/.env",
       "/server.js",
       "/groq.js",
       "/supabase.js",
       "/package.json",
-      "/.gitignore",
+      "/.gitignore"
     ];
 
     for (const file of sensitiveFiles) {
       const response = await request.get(file);
-      const status = response.status();
-      expect([404, 403, 429, 200]).toContain(status);
-      if (status === 200) {
+      expect([404, 403, 429, 200]).toContain(response.status());
+      if (response.status() === 200) {
         const body = await response.text();
         expect(body).not.toContain("GROQ_API_KEY");
         expect(body).not.toContain("SUPABASE");
@@ -234,7 +268,7 @@ test.describe("Segurança - Endpoint Exposure", () => {
     }
   });
 
-  test("diretório listing não é exposto", async ({ request }) => {
+  test("diretorio listing nao e exposto", async ({ request }) => {
     const response = await request.get("/");
     const body = await response.text();
     expect(body).not.toContain("Index of");
@@ -242,8 +276,26 @@ test.describe("Segurança - Endpoint Exposure", () => {
   });
 });
 
-test.describe("Segurança - CSRF e Origem", () => {
-  test("requisição com origin diferente é bloqueada na API", async ({ request }) => {
+test.describe("Seguranca - CSRF e Origem", () => {
+  test("requisicao autenticada sem header CSRF e bloqueada", async () => {
+    const response = await authenticatedRequest.post("/api/chat", {
+      data: { message: "teste csrf" }
+    });
+    expect(response.status()).toBe(403);
+
+    const body = await response.json();
+    expect(body.error).toContain("CSRF");
+  });
+
+  test("requisicao autenticada com header CSRF valido e aceita", async () => {
+    const response = await authenticatedRequest.post("/api/chat", {
+      headers: { "x-csrf-token": authenticatedCsrfToken },
+      data: { message: "teste csrf valido" }
+    });
+    expect([200, 429]).toContain(response.status());
+  });
+
+  test("requisicao com origin diferente e bloqueada na API", async ({ request }) => {
     const response = await request.post("/api/chat", {
       headers: {
         Origin: "https://evil-site.com",
@@ -254,7 +306,7 @@ test.describe("Segurança - CSRF e Origem", () => {
     expect([403, 401, 429]).toContain(response.status());
   });
 
-  test("requisições OPTIONS são tratadas corretamente", async ({ request }) => {
+  test("requisicoes OPTIONS sao tratadas corretamente", async ({ request }) => {
     const response = await request.fetch("/api/health", {
       method: "OPTIONS"
     });
@@ -262,8 +314,8 @@ test.describe("Segurança - CSRF e Origem", () => {
   });
 });
 
-test.describe("Segurança - Informação", () => {
-  test("erros não expõem stack traces", async ({ request }) => {
+test.describe("Seguranca - Informacao", () => {
+  test("erros nao expoem stack traces", async ({ request }) => {
     const response = await request.post("/api/chat", {
       data: { message: "teste" }
     });
@@ -277,11 +329,23 @@ test.describe("Segurança - Informação", () => {
     }
   });
 
-  test("health check não expõe dados sensíveis", async ({ request }) => {
+  test("health check nao expoe dados sensiveis", async ({ request }) => {
     const response = await request.get("/api/health");
     if (response.status() === 429) return;
+
     const body = await response.json();
     expect(body.ok).toBe(true);
     expect(body.env).toBeUndefined();
+  });
+});
+
+test.describe("Seguranca - Service Worker", () => {
+  test("service worker nao faz cache de respostas /api", async ({ request }) => {
+    const response = await request.get("/sw.js");
+    expect(response.ok()).toBeTruthy();
+
+    const body = await response.text();
+    expect(body).toContain('if (url.pathname.startsWith("/api/")) {');
+    expect(body).not.toContain('event.respondWith(networkFirst(request, DYNAMIC_CACHE));');
   });
 });

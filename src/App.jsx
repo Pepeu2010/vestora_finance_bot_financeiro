@@ -418,6 +418,40 @@ function safeExternalHref(href) {
   return "";
 }
 
+function getCookieValue(name) {
+  if (typeof document === "undefined") return "";
+
+  const prefix = `${name}=`;
+  const match = document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(prefix));
+
+  if (!match) return "";
+
+  try {
+    return decodeURIComponent(match.slice(prefix.length));
+  } catch {
+    return match.slice(prefix.length);
+  }
+}
+
+function apiFetch(input, init = {}) {
+  const requestInit = { ...init };
+  const headers = new Headers(init.headers || {});
+  const method = String(requestInit.method || "GET").toUpperCase();
+
+  if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+    const csrfToken = getCookieValue("vestora_csrf");
+    if (csrfToken) {
+      headers.set("x-csrf-token", csrfToken);
+    }
+  }
+
+  requestInit.headers = headers;
+  return fetch(input, requestInit);
+}
+
 function prepareMarkdownForRender(text) {
   return String(text || "")
     .replace(/<think\b[^>]*>[\s\S]*?(?:<\/think>|$)/gi, "")
@@ -1191,7 +1225,7 @@ export default function App() {
 
     setPasswordLoading(true);
     try {
-      const response = await fetch("/api/auth/password", {
+      const response = await apiFetch("/api/auth/password", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ currentPassword, newPassword })
@@ -1534,7 +1568,7 @@ export default function App() {
   async function deleteConversation(conversationId) {
     if (cloudEnabled) {
       try {
-        const response = await fetch(`/api/conversations/${conversationId}`, {
+        const response = await apiFetch(`/api/conversations/${conversationId}`, {
           method: "DELETE"
         });
 
@@ -1597,7 +1631,7 @@ export default function App() {
     let botMsgId = "";
 
     try {
-      const response = await fetch("/api/chat/stream", {
+      const response = await apiFetch("/api/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1783,7 +1817,7 @@ export default function App() {
     const loadingStartedAt = Date.now();
 
     try {
-      const response = await fetch(isRegisterMode ? "/api/auth/register" : "/api/auth/login", {
+      const response = await apiFetch(isRegisterMode ? "/api/auth/register" : "/api/auth/login", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -1815,7 +1849,7 @@ export default function App() {
   }
 
   async function handleLogout() {
-    await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+    await apiFetch("/api/auth/logout", { method: "POST" }).catch(() => {});
     setAccountMenuOpen(false);
     setIsSidebarOpen(false);
     setCurrentUser(null);
@@ -1862,7 +1896,7 @@ export default function App() {
     setProfileLoading(true);
 
     try {
-      const response = await fetch("/api/auth/profile", {
+      const response = await apiFetch("/api/auth/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(profileForm)
@@ -2462,7 +2496,7 @@ export default function App() {
                         if (window.confirm(t("confirmClearAllConversations"))) {
                           if (cloudEnabled) {
                             try {
-                              await fetch("/api/conversations", { method: "DELETE" }).catch(() => {});
+                              await apiFetch("/api/conversations", { method: "DELETE" }).catch(() => {});
                             } catch (err) {
                               console.error("Erro ao limpar conversas em nuvem:", err);
                             }

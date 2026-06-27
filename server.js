@@ -227,6 +227,20 @@ app.use((req, res, next) => {
   return next();
 });
 
+app.use((req, res, next) => {
+  if (!req.path.startsWith("/api/")) return next();
+  if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) return next();
+
+  const hasSessionCookie = Boolean(req.cookies?.[SESSION_COOKIE_NAME]);
+  if (!hasSessionCookie) return next();
+
+  if (!verifyCsrfToken(req)) {
+    return res.status(403).json({ error: "Token CSRF invalido ou ausente." });
+  }
+
+  return next();
+});
+
 app.use("/api/", apiLimiter);
 const publicPath = path.join(__dirname, "public");
 const distPath = path.join(__dirname, process.env.DIST_DIR || "dist");

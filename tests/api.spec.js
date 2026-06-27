@@ -2,6 +2,7 @@
 const { test, expect } = require("@playwright/test");
 
 let authenticatedRequest;
+let authenticatedCsrfToken = "";
 
 async function createAuthenticatedContext(playwright, baseURL) {
   const request = await playwright.request.newContext({ baseURL });
@@ -10,7 +11,7 @@ async function createAuthenticatedContext(playwright, baseURL) {
     data: {
       name: "Teste Playwright",
       email: `teste-${unique}@botfinanceiro.local`,
-      password: "senha-segura-123"
+      password: "Senha-segura-123!"
     }
   });
 
@@ -19,9 +20,23 @@ async function createAuthenticatedContext(playwright, baseURL) {
   }
 
   expect(response.ok()).toBeTruthy();
+  const setCookie = response.headers()["set-cookie"] || "";
+  const csrfMatch = setCookie.match(/vestora_csrf=([^;]+)/);
+  expect(csrfMatch).toBeTruthy();
+  authenticatedCsrfToken = decodeURIComponent(csrfMatch[1]);
   const body = await response.json();
   expect(body.user).toBeDefined();
   return request;
+}
+
+function withCsrf(options = {}) {
+  return {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      "x-csrf-token": authenticatedCsrfToken
+    }
+  };
 }
 
 test.beforeAll(async ({ playwright, baseURL }) => {
@@ -79,9 +94,9 @@ test.describe("API - Autenticacao", () => {
 
 test.describe("API - Validacao autenticada", () => {
   test("POST /api/chat com mensagem vazia retorna erro 400", async () => {
-    const response = await authenticatedRequest.post("/api/chat", {
+    const response = await authenticatedRequest.post("/api/chat", withCsrf({
       data: { message: "" }
-    });
+    }));
 
     expect([400, 429]).toContain(response.status());
 
@@ -93,9 +108,9 @@ test.describe("API - Validacao autenticada", () => {
   });
 
   test("POST /api/chat com mensagem muito longa retorna erro 400", async () => {
-    const response = await authenticatedRequest.post("/api/chat", {
+    const response = await authenticatedRequest.post("/api/chat", withCsrf({
       data: { message: "a".repeat(1300) }
-    });
+    }));
 
     expect([400, 429]).toContain(response.status());
 
@@ -123,6 +138,9 @@ test.describe("API - Seguranca - Dados Sensíveis", () => {
   for (const term of sensitiveTerms) {
     test(`bloqueia tentativa sensivel: "${term}"`, async () => {
       const response = await authenticatedRequest.post("/api/chat", {
+        headers: {
+          "x-csrf-token": authenticatedCsrfToken
+        },
         data: { message: term }
       });
 
@@ -166,9 +184,9 @@ test.describe("API - Conversas autenticadas", () => {
   });
 
   test("DELETE /api/conversations/:id apaga conversa e mensagens no banco", async () => {
-    const chatResponse = await authenticatedRequest.post("/api/chat", {
+    const chatResponse = await authenticatedRequest.post("/api/chat", withCsrf({
       data: { message: "Como posso economizar dinheiro?" }
-    });
+    }));
 
     if (chatResponse.status() === 429) return;
     expect(chatResponse.ok()).toBeTruthy();
@@ -176,7 +194,10 @@ test.describe("API - Conversas autenticadas", () => {
     const chatBody = await chatResponse.json();
     expect(chatBody.conversationId).toBeDefined();
 
-    const deleteResponse = await authenticatedRequest.delete(`/api/conversations/${chatBody.conversationId}`);
+    const deleteResponse = await authenticatedRequest.delete(
+      `/api/conversations/${chatBody.conversationId}`,
+      withCsrf()
+    );
     expect(deleteResponse.ok()).toBeTruthy();
 
     const messagesResponse = await authenticatedRequest.get(
@@ -191,9 +212,9 @@ test.describe("API - Conversas autenticadas", () => {
 
 test.describe("API - Respostas controladas", () => {
   test("Minha Casa Minha Vida usa referencia atual e nao limite antigo", async () => {
-    const response = await authenticatedRequest.post("/api/chat", {
+    const response = await authenticatedRequest.post("/api/chat", withCsrf({
       data: { message: "Minha Casa Minha Vida" }
-    });
+    }));
 
     if (response.status() === 429) return;
     expect(response.ok()).toBeTruthy();
@@ -206,9 +227,9 @@ test.describe("API - Respostas controladas", () => {
   });
 
   test('Minha Casa Minha Vida nao exibe mensagem contraditoria com "nao consegui"', async () => {
-    const response = await authenticatedRequest.post("/api/chat", {
+    const response = await authenticatedRequest.post("/api/chat", withCsrf({
       data: { message: "Como funciona o Minha Casa Minha Vida em 2026?" }
-    });
+    }));
 
     if (response.status() === 429) return;
     expect(response.ok()).toBeTruthy();
@@ -223,9 +244,9 @@ test.describe("API - Respostas controladas", () => {
   });
 
   test("Selic usa dado atual do Banco Central", async () => {
-    const response = await authenticatedRequest.post("/api/chat", {
+    const response = await authenticatedRequest.post("/api/chat", withCsrf({
       data: { message: "Qual a Selic atual?" }
-    });
+    }));
 
     if (response.status() === 429) return;
     expect(response.ok()).toBeTruthy();
